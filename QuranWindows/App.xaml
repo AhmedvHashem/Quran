@@ -1,0 +1,15 @@
+<Application
+    x:Class="QuranWindows.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:QuranWindows">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <local:StringToVisibilityConverter x:Key="StringToVisibilityConverter" xmlns:local="using:QuranWindows.Converters"/>
+            <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" xmlns:local="using:QuranWindows.Converters"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

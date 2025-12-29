@@ -1,0 +1,44 @@
+<UserControl
+    x:Class="QuranWindows.Views.PlayerView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:QuranWindows.Converters"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <converters:BoolToPlayPauseSymbolConverter x:Key="BoolToPlayPauseSymbolConverter"/>
+    </UserControl.Resources>
+
+    <Grid Padding="20" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="15" Grid.Column="0" VerticalAlignment="Center">
+            <Button Command="{Binding TogglePlayPauseCommand}" ToolTipService.ToolTip="Play/Pause">
+                <SymbolIcon Symbol="{Binding AudioPlayer.IsPlaying, Converter={StaticResource BoolToPlayPauseSymbolConverter}}"/>
+            </Button>
+            
+            <Button Command="{Binding PlayAudioCommand}" ToolTipService.ToolTip="Restart/Play Selected Chapter">
+                <SymbolIcon Symbol="Audio"/>
+            </Button>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
+            <TextBlock Text="{Binding AudioPlayer.CurrentChapterName}" FontWeight="Bold" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+            <TextBlock Text="{Binding AudioPlayer.CurrentReciterName}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" Grid.Column="2" VerticalAlignment="Center">
+            <TextBlock Text="Reciter:" VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding Reciters}" 
+                      SelectedItem="{Binding SelectedReciter, Mode=TwoWay}"
+                      DisplayMemberPath="ReciterName"
+                      Width="200"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

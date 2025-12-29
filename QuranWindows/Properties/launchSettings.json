@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "QuranWindows (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "QuranWindows (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
