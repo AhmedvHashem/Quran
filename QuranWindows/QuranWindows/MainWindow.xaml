@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Window
     x:Class="QuranWindows.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -9,8 +10,8 @@
     mc:Ignorable="d">
 
     <Grid>
-        <NavigationView x:Name="NavView" 
-                        MenuItemsSource="{Binding Chapters}" 
+        <NavigationView x:Name="NavView"
+                        MenuItemsSource="{Binding Chapters}"
                         SelectedItem="{Binding SelectedChapter, Mode=TwoWay}"
                         PaneDisplayMode="Left"
                         IsSettingsVisible="False"
