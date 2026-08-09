@@ -3,7 +3,11 @@
 #include <adwaita.h>
 #include <gtkmm.h>
 
+#if __has_include(<libShared_api.h>)
 #include <libShared_api.h>
+#elif __has_include(<Shared_api.h>)
+#include <Shared_api.h>
+#endif
 
 namespace {
 
@@ -14,12 +18,13 @@ public:
         set_default_size(960, 640);
 
         header_ = Gtk::HeaderBar();
+        set_titlebar(header_);
+
         title_ = Gtk::Label("Tilawa — Linux shell");
         title_.set_vexpand(true);
         greeting_.set_halign(Gtk::Align::CENTER);
 
         layout_ = Gtk::Box(Gtk::Orientation::VERTICAL);
-        layout_.append(header_);
         layout_.append(title_);
         layout_.append(greeting_);
         set_child(layout_);

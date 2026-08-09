@@ -32,13 +32,26 @@ kotlin {
 
     listOf(
         iosArm64(),
-        iosSimulatorArm64(),
-        macosArm64()
+        iosSimulatorArm64()
     ).forEach { appleTarget ->
         appleTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
             xcf.add(this)
+        }
+    }
+
+    listOf(
+        macosArm64(),
+        macosX64()
+    ).forEach { macTarget ->
+        macTarget.binaries.framework {
+            baseName = "Shared"
+            isStatic = true
+            xcf.add(this)
+        }
+        macTarget.binaries.sharedLib {
+            baseName = "Shared"
         }
     }
 
@@ -57,12 +70,14 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        // C-export façade shared by the two C-ABI targets (Windows/Linux)
+        // C-export façade shared by C-ABI targets (Windows, Linux, macOS GTK)
         val cApiMain by creating {
             dependsOn(commonMain.get())
         }
         mingwX64Main.get().dependsOn(cApiMain)
         linuxX64Main.get().dependsOn(cApiMain)
+        macosArm64Main.get().dependsOn(cApiMain)
+        macosX64Main.get().dependsOn(cApiMain)
 
         commonMain.dependencies {
             implementation(libs.kotlin.coroutines.core)
