@@ -4,17 +4,18 @@ import kotlinx.cinterop.*
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.CName
 
-// C-export façade for the WinUI shell (see .opencode/skills/kmp-c-abi).
+// C-export façade for the Windows/Linux shells (see .agents/skills/kmp-c-abi).
+// Shared by mingwX64Main and linuxX64Main via the cApiMain source set.
 // Ownership: returned strings are nativeHeap-allocated and must be released
-// by the caller via tilawaStringFree.
+// by the caller via shared_string_free.
 
 @OptIn(ExperimentalNativeApi::class, ExperimentalForeignApi::class)
-@CName("tilawa_abi_version")
-fun tilawaAbiVersion(): Int = 1
+@CName("shared_abi_version")
+fun sharedAbiVersion(): Int = 1
 
 @OptIn(ExperimentalNativeApi::class, ExperimentalForeignApi::class)
-@CName("tilawa_greet")
-fun tilawaGreet(): CPointer<ByteVar> {
+@CName("shared_greet")
+fun sharedGreet(): CPointer<ByteVar> {
     val bytes = Greeting().greet().encodeToByteArray()
     val out = nativeHeap.allocArray<ByteVar>(bytes.size + 1)
     if (bytes.isNotEmpty()) {
@@ -25,7 +26,7 @@ fun tilawaGreet(): CPointer<ByteVar> {
 }
 
 @OptIn(ExperimentalNativeApi::class, ExperimentalForeignApi::class)
-@CName("tilawa_string_free")
-fun tilawaStringFree(value: CPointer<ByteVar>?) {
+@CName("shared_string_free")
+fun sharedStringFree(value: CPointer<ByteVar>?) {
     value?.let { nativeHeap.free(it.rawValue) }
 }

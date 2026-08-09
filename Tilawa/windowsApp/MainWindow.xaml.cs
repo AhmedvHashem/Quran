@@ -7,7 +7,7 @@ namespace TilawaWindows
         public MainWindow()
         {
             InitializeComponent();
-            GreetingText.Text = CoreClient.Greet();
+            GreetingText.Text = Shared.Greet();
         }
     }
 }

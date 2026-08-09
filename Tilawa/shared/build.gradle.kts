@@ -55,6 +55,13 @@ kotlin {
     }
 
     sourceSets {
+        // C-export façade shared by the two C-ABI targets (Windows/Linux)
+        val cApiMain by creating {
+            dependsOn(commonMain.get())
+        }
+        mingwX64Main.get().dependsOn(cApiMain)
+        linuxX64Main.get().dependsOn(cApiMain)
+
         commonMain.dependencies {
             implementation(libs.kotlin.coroutines.core)
             implementation(libs.kotlin.serialization)

@@ -5,7 +5,7 @@ description: Consuming the KMP shared core from iOS and macOS Swift apps. Use wh
 
 # Apple Bridge (iOS + macOS)
 
-Governing contract: `.ai/arch/APP_STACKS_PLAN.md`. UI is SwiftUI (UIKit/AppKit where needed); the shared core is consumed as an Apple framework — no Compose Multiplatform, no shared UI.
+Governing contract: the project's architecture plan when present. UI is SwiftUI (UIKit/AppKit where needed); the shared core is consumed as an Apple framework — no Compose Multiplatform, no shared UI.
 
 ## Consumption route (baseline)
 
@@ -28,7 +28,7 @@ Swift Export (Kotlin 2.4, Alpha) maps `suspend`→`async` and `Flow`→`AsyncSeq
 
 ## Rules
 
-- The exported Kotlin surface stays narrow (see `kmp-shared-core`); hide anything that doesn't map cleanly behind a bridge-friendly façade.
+- The exported Kotlin surface stays narrow (see `kmp-core`); hide anything that doesn't map cleanly behind a bridge-friendly façade.
 - Package resources on the Apple side — the Kotlin binary does not carry app resources or Info.plist config.
 - Lifecycle, navigation, notifications, widgets, store/billing, signing: always Swift-side.
 - `Flow` collection: wrap in the Swift façade (SKIE-generated async sequence or a small `ObservableObject` adapter); cancel collection from `onDisappear` / `deinit` — no leaked Kotlin jobs.
@@ -36,4 +36,4 @@ Swift Export (Kotlin 2.4, Alpha) maps `suspend`→`async` and `Flow`→`AsyncSeq
 
 ## Verify
 
-Build both apps in Xcode after any shared-API change: Tilawa/iosApp and the macOS app. A green Gradle build alone does not prove the framework imports cleanly.
+Build both apps in Xcode after any shared-API change (the iOS app project and the macOS app project). A green Gradle build alone does not prove the framework imports cleanly.

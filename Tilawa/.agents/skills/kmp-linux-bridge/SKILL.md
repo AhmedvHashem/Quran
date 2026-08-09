@@ -1,16 +1,16 @@
 ---
-name: gtk-linux-bridge
-description: Building the Linux C++ adapter over the Kotlin/Native shared library and GTK 4/libadwaita app code. Use when editing the Linux app, C++ files, RAII wrappers around the C ABI, GLib main-context dispatch, or GTK view code consuming the shared core.
+name: kmp-linux-bridge
+description: Building the Linux C++ adapter over the Kotlin/Native shared library and GTK 4/libadwaita app code. Use when editing the Linux app (linuxApp/**), C++ files, RAII wrappers around the C ABI, GLib main-context dispatch, or GTK view code consuming the shared core.
 ---
 
 # Linux Bridge (GTK 4 / libadwaita / C++)
 
-Governing contract: `.ai/arch/APP_STACKS_PLAN.md`. Kotlin/Native emits `libshared.so` + C header (see `kmp-c-abi`); this skill is the C++ side of that boundary. GTK 4 + libadwaita is the GNOME-oriented UI choice; use gtkmm-4.0 for idiomatic C++ over the raw GTK C API.
+Governing contract: the project's architecture plan when present. Kotlin/Native emits `libShared.so` + C header (see `kmp-c-abi`); this skill is the C++ side of that boundary. GTK 4 + libadwaita is the GNOME-oriented UI choice; use gtkmm-4.0 for idiomatic C++ over the raw GTK C API.
 
 ## Layering
 
 ```
-GTK widget → C++ client (RAII, value types) → thin ABI wrapper → libshared.so
+GTK widget → C++ client (RAII, value types) → thin ABI wrapper → libShared.so
 ```
 
 No raw ABI call, handle, or `void*` context may appear in GTK view code.
@@ -27,5 +27,5 @@ No raw ABI call, handle, or `void*` context may appear in GTK view code.
 
 ## Verify
 
-- Build the Linux app after any ABI change; run `scripts/abi-check.sh` — drift means this adapter updates in the same change.
+- Build the Linux app after any ABI change; run `.agents/scripts/abi-check.sh` — drift means this adapter updates in the same change.
 - Stress: repeated open/close of a streaming screen under `valgrind --tool=memcheck` (or ASAN) — no leaked handles, no use-after-dispose.

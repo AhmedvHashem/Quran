@@ -8,7 +8,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTKMM REQUIRED IMPORTED_TARGET gtkmm-4.0)
 pkg_check_modules(ADWAITA REQUIRED IMPORTED_TARGET libadwaita-1)
 
-# KMP shared core (C ABI, see .opencode/skills/kmp-c-abi + gtk-linux-bridge).
+# KMP shared core (C ABI, see .opencode/skills/kmp-c-abi + kmp-linux-bridge).
 # Built once via Gradle; re-run `../gradlew :shared:linkReleaseSharedLinuxX64` to refresh.
 set(SHARED_BIN ${CMAKE_SOURCE_DIR}/../shared/build/bin/linuxX64/releaseShared)
 add_custom_command(

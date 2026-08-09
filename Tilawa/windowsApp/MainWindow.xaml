@@ -7,8 +7,6 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <!-- Shared core is consumed through CoreClient (P/Invoke over Shared.dll).
-         See .opencode/skills/winui-bridge. -->
     <NavigationView x:Name="NavView"
                     PaneDisplayMode="Left"
                     IsSettingsVisible="False"

@@ -1,5 +1,5 @@
 // Tilawa Linux shell — GTK 4 + libadwaita (gtkmm-4.0) over the KMP shared core
-// (libShared.so C ABI; see .opencode/skills/gtk-linux-bridge).
+// (libShared.so C ABI; see .agents/skills/kmp-linux-bridge).
 #include <adwaita.h>
 #include <gtkmm.h>
 
@@ -24,9 +24,9 @@ public:
         layout_.append(greeting_);
         set_child(layout_);
 
-        if (auto* greet = static_cast<char*>(tilawa_greet())) {
+        if (auto* greet = static_cast<char*>(shared_greet())) {
             greeting_.set_text(greet);
-            tilawa_string_free(greet);
+            shared_string_free(greet);
         }
     }
 

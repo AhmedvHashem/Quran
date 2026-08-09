@@ -1,20 +1,20 @@
 ---
 name: kmp-core
-description: Conventions for the KMP shared core. Use when editing Tilawa/shared/** — adding dependencies, writing commonMain code, creating expect/actual declarations, or exposing API to the five native apps (Android, iOS, macOS, Windows, Linux).
+description: Conventions for the KMP shared core. Use when editing the shared KMP module (shared/**) — adding dependencies, writing commonMain code, creating expect/actual declarations, or exposing API to the five native apps (Android, iOS, macOS, Windows, Linux).
 ---
 
 # KMP Core
 
-Governing contract: `.ai/arch/APP_STACKS_PLAN.md`. Share product logic and infrastructure; never UI, navigation, colors, or platform types.
+Governing contract: the project's architecture plan (e.g. `.ai/arch/APP_STACKS_PLAN.md`) when present. Share product logic and infrastructure; never UI, navigation, colors, or platform types.
 
-## Targets (already configured in `Tilawa/shared/build.gradle.kts`)
+## Targets (configured in `shared/build.gradle.kts`)
 
 - `android` (Kotlin/JVM via AGP KMP library plugin)
 - `iosArm64`, `iosSimulatorArm64` → static framework `Shared`
 - `macosArm64` → static framework `Shared`
 - `linuxX64`, `mingwX64` → `sharedLib` (C ABI, see `kmp-c-abi` skill)
 
-Source sets: `commonMain`, `androidMain`, `appleMain` (default hierarchy, shared by iosMain + macosMain), `iosMain`, `macosArm64Main`, `linuxX64Main`, `mingwX64Main`.
+Source sets: `commonMain`, `androidMain`, `appleMain` (default hierarchy, shared by iosMain + macosMain), `iosMain`, `macosArm64Main`, `linuxX64Main`, `mingwX64Main`, `cApiMain` (C-export façade shared by mingwX64Main + linuxX64Main).
 
 ## Approved library matrix (commonMain)
 
@@ -33,7 +33,7 @@ Per-target engines/drivers:
 - appleMain: `ktor-client-darwin`
 - mingwX64Main / linuxX64Main: `ktor-client-curl`
 
-Verified Aug 2026: full `:shared:assemble` green on all 5 targets with the above (Kotlin 2.3.21, Ktor 3.1.3, settings 1.3.0, Kermit 2.0.5). Versions live in `Tilawa/gradle/libs.versions.toml` — the SQLDelight catalog entries stay for re-add but are unused.
+Verified Aug 2026: full `:shared:assemble` green on all 5 targets with the above (Kotlin 2.3.21, Ktor 3.1.3, settings 1.3.0, Kermit 2.0.5). Versions live in `gradle/libs.versions.toml` — the SQLDelight catalog entries stay for re-add but are unused.
 
 Do NOT add: a DI framework (use manual constructor injection), KMP-NativeCoroutines, protobuf, or Compose Multiplatform. Add only when a measured need exists.
 
