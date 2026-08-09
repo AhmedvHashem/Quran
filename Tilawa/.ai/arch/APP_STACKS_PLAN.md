@@ -12,11 +12,20 @@ Use **Kotlin Multiplatform (KMP)** for shared source organization and **Kotlin/N
 | Windows | C# | WinUI 3 | Kotlin/Native DLL through a C ABI and a C# P/Invoke adapter |
 | Linux | C++ | GTK 4 and libadwaita | Kotlin/Native shared library through a C ABI and a thin C/C++ adapter |
 
+
+Note: 
+- if we are going with C# for windows we should use https://github.com/gircore/gir.core as gtk/adw binding for C# for linux
+- if we are going with Kotlin for windows and linux we should use https://github.com/nttr-tech/winui4k and https://github.com/jwharm/java-gi 
+
+Side Note:
+- https://github.com/compose4gtk/compose-4-gtk is based on https://github.com/jwharm/java-gi to use compose runtime to create adw apps
+- there are no similar thing for winui3
+- so this option is out of the table atm
+
 The governing rule is:
 
 > Share product logic and infrastructure; keep UI, platform behavior, and platform integrations native.
 
-Linux does not have a single universal native UI. GTK 4 with libadwaita is the chosen target for a GNOME-oriented application. A KDE-oriented product would reconsider that choice and likely use Qt instead.
 
 ## Target architecture
 
@@ -60,22 +69,6 @@ apps/
 ```
 
 Exact source-set names should follow the selected Kotlin targets and may differ slightly from this conceptual layout.
-
-## Why KMP is preferred over Rust for this matrix
-
-Rust remains a strong choice for a portable core when C ABI portability, systems-level control, or an existing Rust codebase is the primary constraint. It is not the best default for this particular platform matrix, however.
-
-KMP already removes most of the interop work:
-
-1. **Android is direct.** Shared Kotlin is consumed as ordinary Kotlin/JVM code. There is no foreign-function interface or generated language binding between the shared core and the Android app.
-2. **Apple targets are first-class Kotlin/Native outputs.** The shared module can be packaged as an Apple framework or XCFramework and imported by Swift. This avoids designing a Swift binding over a generic C interface for the whole core.
-3. **Shared development uses one high-level language.** Coroutines, serialization, common networking and persistence abstractions, and shared tests remain in the Kotlin ecosystem.
-4. **Only Windows and Linux need a C boundary.** Linux already consumes C APIs naturally from C++, leaving C#/.NET as the principal binding challenge.
-5. **The UI remains genuinely native.** Selecting KMP for the core does not require Compose Multiplatform or a shared rendering layer.
-
-A Rust core would normally require deliberate bindings for Kotlin/JVM, Swift, C#, and C++, plus language-specific conversions for async operations, streams, errors, ownership, and collections. KMP handles Android and Apple integration directly enough that reproducing those bridges in Rust adds work without advancing the central goal.
-
-This is a pragmatic preference, not a claim that Kotlin/Native is more universal than Rust. The decision should be revisited if the shared core becomes systems-heavy, must be embedded into many non-Kotlin hosts, depends on a critical Rust library, or Kotlin/Native's Windows behavior fails the proof of concept.
 
 ## Responsibility boundaries
 
@@ -415,3 +408,25 @@ For Android, iOS, macOS, Windows, and Linux with genuinely native UI, the best s
 KMP is preferred over Rust here because it makes Android integration direct, gives Apple platforms a native framework packaging path, and confines custom C binding work to Windows and Linux. The remaining uncertainty is not the overall sharing model; it is whether the Kotlin/Native C ABI can be wrapped into a reliable, maintainable, idiomatic C# layer at acceptable cost.
 
 The next action is therefore a narrow end-to-end proof of concept, with the Windows adapter treated as the decisive architecture gate.
+
+---
+
+## Appendix: verified library matrix (Aug 2026)
+
+Verified by building `Tilawa/shared` (`:shared:assemble` green on all 5 targets; Kotlin 2.3.21, AGP 9.2.0):
+
+| Concern | Library | Status |
+|---|---|---|
+| Async/streams | kotlinx-coroutines 1.10.2 | ✅ all 5 targets |
+| Serialization | kotlinx-serialization-json 1.11.0 | ✅ all 5 targets |
+| Date/time | kotlinx-datetime 0.7.1 | ✅ all 5 targets |
+| HTTP | Ktor 3.1.3 — okhttp (android), darwin (apple), curl (mingw/linux) | ✅ all 5 targets |
+| Key-value | multiplatform-settings 1.3.0 | ✅ all 5 targets |
+| Logging | Kermit 2.0.5 | ✅ all 5 targets |
+| Database | **open gate** — SQLDelight 2.3.2 fails: its runtime pulls `co.touchlab:sqliter-driver` (`-lsqlite3`) into every native link; SQLiter has no linuxX64 variant and mingwX64 cross-link from macOS fails (no system sqlite3). Likely resolution: Room KMP with bundled sqlite. Decide in the PoC slice | ❌ removed |
+
+Also verified: SQLDelight ≤ 2.1.0 breaks AGP 9 KMP modules (drags AGP 8 onto the buildscript classpath) — 2.3.2 fixes that but not the link issue.
+
+Initial C ABI snapshots committed to `abi/mingwX64/Shared_api.h` and `abi/linuxX64/libShared_api.h`; `scripts/abi-check.sh` is the drift gate.
+
+Tooling created: skills in `/skills/` (kmp-core, kmp-c-abi, kmp-apple-bridge, kmp-windows-bridge, kmp-linux-bridge), `/abi-check` command, and `/scripts`.

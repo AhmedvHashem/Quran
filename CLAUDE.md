@@ -51,3 +51,20 @@ All models in `Models/` are `Codable` structs with `CodingKeys` for snake_case A
 
 - macOS 12+
 - Swift 5.5+
+
+---
+
+## Tilawa (KMP shared core + multi-platform apps)
+
+`Tilawa/` is the Kotlin Multiplatform project: `:shared` core (android, iosArm64, iosSimulatorArm64, macosArm64, mingwX64, linuxX64), `:androidApp` (Compose), `:iosApp` (SwiftUI/Xcode), `:macosApp` (SwiftUI/SwiftPM + Shared.xcframework binaryTarget), `:windowsApp` (WinUI 3/C# + Shared.dll via CoreClient P/Invoke), `:linuxApp` (GTK 4/libadwaita/C++ + libShared.so C ABI). Shells call only `Greeting` from the core — no Quran logic ported yet. C-export façade (`tilawa_*`) lives in `mingwX64Main`/`linuxX64Main`. Governing architecture: `.ai/arch/APP_STACKS_PLAN.md`.
+
+```bash
+scripts/core-build.sh           # assemble :shared for all 5 targets
+scripts/package-xcframework.sh  # iOS+macOS release XCFramework
+scripts/export-c-header.sh      # build mingw/linux libs, snapshot C headers to abi/
+scripts/abi-check.sh            # fail on ABI drift vs abi/ snapshots (also: /abi-check)
+```
+
+opencode skills in `.opencode/skills/` (kmp-shared-core, kmp-c-abi, kmp-apple-bridge, winui-bridge, gtk-linux-bridge) hold the per-layer conventions — consult them before editing shared code or any bridge.
+
+Verified library state (Aug 2026): Ktor 3.1.3 (okhttp/darwin/curl engines), multiplatform-settings, Kermit, kotlinx-coroutines/serialization/datetime all compile and link on all 5 targets. SQLDelight was removed — sqliter-driver has no linuxX64 variant and mingwX64 links only on Windows hosts; persistence choice is an open decision gate (likely Room KMP with bundled sqlite).

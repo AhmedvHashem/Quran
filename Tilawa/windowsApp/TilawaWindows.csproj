@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>TilawaWindows</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <!-- ponytail: unpackaged shell; add an MSIX packaging project (wapproj) when distribution matters -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <!-- KMP shared core: build Shared.dll (mingwX64 release) if missing, then ship it
+       next to the exe. Re-run ..\gradlew.bat :shared:linkReleaseSharedMingwX64 to refresh. -->
+  <PropertyGroup>
+    <SharedDll>$(MSBuildThisFileDirectory)..\shared\build\bin\mingwX64\releaseShared\Shared.dll</SharedDll>
+  </PropertyGroup>
+  <Target Name="BuildSharedCore" BeforeTargets="Build">
+    <Exec Command="call &quot;$(MSBuildThisFileDirectory)..\gradlew.bat&quot; :shared:linkReleaseSharedMingwX64 -q"
+          WorkingDirectory="$(MSBuildThisFileDirectory).."
+          Condition="'$(OS)' == 'Windows_NT' And !Exists('$(SharedDll)')" />
+    <Copy SourceFiles="$(SharedDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true"
+          Condition="Exists('$(SharedDll)')" />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7175" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.251106002" />
+  </ItemGroup>
+
+    <!-- Publish Properties -->
+  <PropertyGroup>
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
+    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
+    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+  </PropertyGroup>
+</Project>

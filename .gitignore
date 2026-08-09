@@ -100,4 +100,5 @@ $RECYCLE.BIN/
 .cache/
 QuranMac/.build/
 QuranMac/.swiftpm/
+Tilawa/macosApp/.build/
 .claude/settings.local.json
