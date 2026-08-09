@@ -54,6 +54,8 @@ kotlin {
         }
     }
 
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
         // C-export façade shared by the two C-ABI targets (Windows/Linux)
         val cApiMain by creating {
