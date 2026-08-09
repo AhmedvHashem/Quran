@@ -12,6 +12,7 @@
     <!-- ponytail: unpackaged shell; add an MSIX packaging project (wapproj) when distribution matters -->
     <WindowsPackageType>None</WindowsPackageType>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
