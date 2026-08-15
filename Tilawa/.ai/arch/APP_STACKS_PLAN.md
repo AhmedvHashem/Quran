@@ -10,12 +10,18 @@ Use **Kotlin Multiplatform (KMP)** for shared source organization and **Kotlin/N
 | iOS | Swift | SwiftUI, with UIKit where needed | Kotlin/Native Apple framework or XCFramework |
 | macOS | Swift | SwiftUI, with AppKit where needed | Kotlin/Native Apple framework or XCFramework |
 | Windows | C# | WinUI 3 | Kotlin/Native DLL through a C ABI and a C# P/Invoke adapter |
-| Linux | C++ | GTK 4 and libadwaita | Kotlin/Native shared library through a C ABI and a thin C/C++ adapter |
+| Linux | C++ → **C# (proposed)** | GTK 4 and libadwaita | Kotlin/Native shared library through a C ABI and a thin C/C++ adapter → **the same C# adapter as Windows (proposed)** |
 
+> **Revision under evaluation (Aug 2026).** Two upstream projects — [gir.core](https://github.com/gircore/gir.core)
+> and [kotlin-native-nuget](https://github.com/xxfast/kotlin-native-nuget) — change the cost basis of
+> the Windows and Linux rows. The proposal is to make Linux a **C#** app and let one generated C#
+> binding serve both non-Apple desktops. See
+> [Appendix: gir.core and kotlin-native-nuget evaluation](#appendix-gircore-and-kotlin-native-nuget-evaluation-aug-2026)
+> for the evidence, the costs, and the gate that must pass before this is adopted.
 
-Note: 
-- if we are going with C# for windows we should use https://github.com/gircore/gir.core as gtk/adw binding for C# for linux
-- if we are going with Kotlin for windows and linux we should use https://github.com/nttr-tech/winui4k and https://github.com/jwharm/java-gi 
+Note:
+- if we are going with C# for windows we should use https://github.com/gircore/gir.core as gtk/adw binding for C# for linux — **investigated, viable; see the appendix**
+- if we are going with Kotlin for windows and linux we should use https://github.com/nttr-tech/winui4k and https://github.com/jwharm/java-gi
 
 Side Note:
 - https://github.com/compose4gtk/compose-4-gtk is based on https://github.com/jwharm/java-gi to use compose runtime to create adw apps
@@ -188,6 +194,11 @@ This is an illustrative contract, not a claim about the exact symbols generated 
 
 #### Linux adapter
 
+> Under revision: if the Linux shell moves to C# on gir.core, this whole section is replaced by the
+> Windows adapter below — the two shells share one adapter. The C++ design stays documented as the
+> fallback if the `linuxX64` gate fails. See
+> [the appendix](#appendix-gircore-and-kotlin-native-nuget-evaluation-aug-2026).
+
 C++ can consume the generated C header directly. Add a thin RAII wrapper to:
 
 - Dispose opaque handles deterministically
@@ -199,6 +210,12 @@ C++ can consume the generated C header directly. Add a thin RAII wrapper to:
 The adapter should remain thin and mechanical; product behavior belongs in the Kotlin core or the native UI layer.
 
 #### Windows adapter and the remaining C# challenge
+
+> Update: the "small binding generator" hypothesised below now exists as
+> [kotlin-native-nuget](https://github.com/xxfast/kotlin-native-nuget), and it already provides every
+> item in the list. The requirements below stand as the acceptance criteria we hold it to, whether it
+> is adopted or the adapter is handwritten. See
+> [the appendix](#appendix-gircore-and-kotlin-native-nuget-evaluation-aug-2026).
 
 .NET can call the Kotlin/Native DLL through P/Invoke, but Kotlin/Native does not provide a complete, idiomatic C# binding equivalent to Android's direct dependency or Apple's framework consumption. The project therefore needs a C# adapter—and potentially a small binding generator—that reads or mirrors the C contract and provides:
 
@@ -379,19 +396,23 @@ This slice crosses every risky boundary while remaining small enough to discard 
 5. Build the Linux C++ wrapper and GTK screen.
 6. Build the C# P/Invoke adapter and WinUI screen.
 7. Stress-test cancellation, threading, callbacks, and disposal.
-8. Decide whether to handwrite the small bridge, generate it from a schema/header, or introduce a dedicated binding tool.
+8. Decide whether to handwrite the small bridge, generate it from a schema/header, or introduce a dedicated binding tool. — **A dedicated tool now exists ([kotlin-native-nuget](https://github.com/xxfast/kotlin-native-nuget)); this step becomes "prove it on `linuxX64`, then adopt or fall back". See the appendix.**
 9. Only then expand the shared-core API and establish release automation.
 
 ## Risks and decision gates
 
 | Risk | Why it matters | Decision gate or mitigation |
 |---|---|---|
-| Kotlin/Native-to-C# ergonomics | The generated C surface is not an idiomatic .NET API | Require the Windows proof of concept before committing the full architecture |
+| Kotlin/Native-to-C# ergonomics | The generated C surface is not an idiomatic .NET API | Require the Windows proof of concept before committing the full architecture. **Largely answered upstream** by kotlin-native-nuget — see the appendix |
+| `linuxX64` unproven in kotlin-native-nuget | The Linux RID is mapped but not exercised in the plugin's CI, and it is the leg that justifies moving Linux to C# | Spike `packNuget` for `linuxX64` first; the C++/gtkmm path stays as the fallback |
+| Pre-1.0 dependencies on the desktop path | gir.core `0.8.x` and kotlin-native-nuget `0.x` can both break the shells at a version bump | Pin both; diff the generated `Interop.cs` on every plugin bump; keep the handwritten C ABI until the generated path is proven |
+| .NET AOT/trimming vs. callback thunks | Every `Flow`, `suspend`, lambda and interface callback needs a JIT for its native-to-managed thunk | Stay on JIT for both desktop shells; re-verify `PublishTrimmed` in `TilawaWindows.csproj` against generated bindings |
 | Async and stream impedance | Coroutines and `Flow` do not cross a C ABI directly | Standardize callback, subscription, cancellation, and disposal contracts |
 | Memory ownership | Three memory-management models meet at the native boundary | Opaque handles, explicit release APIs, stress tests, and safe wrappers |
 | Thread affinity | Native UIs require updates on their own UI threads | Keep dispatch in platform adapters and document callback threading |
 | ABI evolution | Kotlin API changes can break C#/C++ consumers | Export a narrow façade, version it, and check generated headers in CI |
 | Library target support | A common Kotlin dependency may not support every native target equally | Validate Windows and Linux support before adopting shared dependencies |
+| Compiler-plugin link crash (KT-62984) | A second Kotlin compiler plugin on a `sharedLib` target can NPE at link time in `CAdapterCodegen`; the database gate's likely answer (Room KMP) adds one | Prove Room on `mingwX64`/`linuxX64` before adopting it; fall back to a per-target `kotlinCompilerPluginClasspath` exclusion |
 | Platform divergence | Over-sharing can force lowest-common-denominator behavior | Share policies and domain state, not UI or OS-specific workflows |
 | Build/distribution complexity | Five apps still require five native toolchains | Treat each native app as a first-class deliverable with its own CI lane |
 
@@ -408,6 +429,13 @@ For Android, iOS, macOS, Windows, and Linux with genuinely native UI, the best s
 KMP is preferred over Rust here because it makes Android integration direct, gives Apple platforms a native framework packaging path, and confines custom C binding work to Windows and Linux. The remaining uncertainty is not the overall sharing model; it is whether the Kotlin/Native C ABI can be wrapped into a reliable, maintainable, idiomatic C# layer at acceptable cost.
 
 The next action is therefore a narrow end-to-end proof of concept, with the Windows adapter treated as the decisive architecture gate.
+
+**Updated Aug 2026.** That question is now largely answered upstream rather than by us:
+kotlin-native-nuget generates the idiomatic C# layer, and gir.core makes the same layer serve a GTK 4
+Linux shell — so C++ leaves the stack and one adapter replaces two. The decisive gate moves with it:
+it is no longer "can the Windows bridge be built" but **"does the plugin's `linuxX64` path, which its
+own CI does not exercise, actually produce a working package"**. See
+[the appendix](#appendix-gircore-and-kotlin-native-nuget-evaluation-aug-2026).
 
 ---
 
@@ -430,3 +458,156 @@ Also verified: SQLDelight ≤ 2.1.0 breaks AGP 9 KMP modules (drags AGP 8 onto t
 Initial C ABI snapshots committed to `abi/mingwX64/Shared_api.h` and `abi/linuxX64/libShared_api.h`; `scripts/abi-check.sh` is the drift gate.
 
 Tooling created: skills in `/skills/` (kmp-core, kmp-c-abi, kmp-apple-bridge, kmp-windows-bridge, kmp-linux-bridge), `/abi-check` command, and `/scripts`.
+
+---
+
+## Appendix: gir.core and kotlin-native-nuget evaluation (Aug 2026)
+
+Two upstream projects land directly on the two things this plan left open: the handwritten C#
+adapter (decision gate 8) and the C++/C# split across the two desktop shells. Both were read at
+source, not taken from their READMEs.
+
+| | [gircore/gir.core](https://github.com/gircore/gir.core) | [xxfast/kotlin-native-nuget](https://github.com/xxfast/kotlin-native-nuget) |
+|---|---|---|
+| What it is | C# bindings for GTK 4 / libadwaita, generated from GObject Introspection | Gradle plugin that packages a Kotlin/Native library as a NuGet package with generated C# bindings |
+| Version read | `0.8.1`, HEAD `a88ebcc` (2026-08-08) | `0.3.0`, HEAD `26c2804` (2026-08-15) |
+| License | MIT | Apache 2.0 |
+| Stability | Pre-1.0, "API is subject to change" | `0.x`, Kotlin **experimental** badge, "anything can change between versions" |
+| Evidence of depth | Ships GTK-4.0, Adw-1, Gio-2.0, Gst-1.0, Cairo, Pango, GdkPixbuf, GtkSource-5, Secret-1, Rsvg, WebKit-6.0 packages. Production users include Pinta, Denaro, Parabolic, Tagger, Cavalier | 96 ADRs, 96 C# integration-test files, CI on macOS + Windows, codecov on both languages |
+
+### What changes: two bridges collapse into one
+
+The plan currently pays for two independent adapter stacks below the UI — a C# P/Invoke adapter for
+WinUI 3 and a C++ RAII adapter for GTK — each with its own ownership rules, error translation, and
+threading contract, both maintained against the same C header. gir.core removes the reason for the
+second one: if GTK 4 and libadwaita are callable from C#, the Linux shell is a C# app, and both
+non-Apple desktops consume **one** adapter.
+
+kotlin-native-nuget then removes the reason to handwrite even that one. `:shared` publishes a NuGet
+package; `:windowsApp` and `:linuxApp` add a `PackageReference` and call ordinary C#.
+
+```mermaid
+flowchart TB
+    Shared["KMP shared core"]
+    Shared --> JVM["Kotlin/JVM artifact"]
+    Shared --> Apple["XCFramework"]
+    Shared --> Pkg["NuGet package<br/>generated Interop.cs +<br/>runtimes/win-x64, linux-x64/native"]
+
+    JVM --> Android["Android — Compose"]
+    Apple --> IOS["iOS — SwiftUI"]
+    Apple --> Mac["macOS — SwiftUI"]
+    Pkg --> WinUI["Windows — C# + WinUI 3"]
+    Pkg --> Gtk["Linux — C# + GTK 4/libadwaita<br/>(gir.core)"]
+```
+
+### The threading argument for gir.core
+
+`Gio.Application.RunWithSynchronizationContext` installs a `SynchronizationContext` backed by the
+GLib main loop (`GLib.Internal.MainLoopSynchronizationContext`: `Post` → `g_idle_add`, `Send` →
+`g_main_context_invoke`). This is the same shape WinUI 3 gets from its `DispatcherQueue`
+synchronization context. In practice `await core.LoadAsync()` resumes on the GTK main thread on
+Linux and on the WinUI dispatcher thread on Windows, from **identical** adapter code with no
+dispatch-specific branching.
+
+That satisfies interop principle 5 ("UI dispatch belongs to the host") on both platforms through the
+same mechanism, which the C++ path never could — the C++ adapter has to marshal callbacks onto the
+GLib main context by hand.
+
+### What kotlin-native-nuget already answers from the PoC checklist
+
+Read from `docs/topics/coroutines-and-flow.md` and the corresponding ADRs, each with integration
+tests in `IntegrationTests/`:
+
+| Checklist concern | Upstream mapping | ADR |
+|---|---|---|
+| `suspend` → `Task<T>` | `async Task<T>`, `Async` suffix | 019 |
+| Cancellation | `CancellationToken` per call → coroutine `Job.cancel()` | 022 |
+| Structured concurrency | `Dispose()` cancels the owning object's scope and its children | 021 |
+| Graceful drain | `IAsyncDisposable` | 025 |
+| `Flow<T>` → stream | `IAsyncEnumerable<T>`, `await foreach` | 026 |
+| `StateFlow<T>` | `KotlinStateFlow<T>` — `.Value` plus `IAsyncEnumerable<T>` | 065, 067, 071 |
+| Errors across the ABI | Typed C# exceptions, cause chains, stack traces; no Kotlin exception crosses raw | 023, 027, 028, 029 |
+| Object lifetime | Opaque handle + `IDisposable`, `StableRef` on the Kotlin side | 003, 051 |
+| Callbacks / reverse calls | C# delegates pinned with `GCHandle`, interface bridging both directions | 036, 037, 039, 084, 085 |
+| ABI drift detection | Forward ABI contract check in the plugin's own build | 055 |
+| Multi-RID packaging | `prebuiltRuntimes` merges per-host artifacts into one `.nupkg` | 093 |
+
+This is the work items 259–347 of the proof-of-concept checklist were written to discover. Adopting
+the plugin converts most of them from "design and build" to "confirm upstream behaviour holds for
+our slice".
+
+### Costs, risks, and what is genuinely unproven
+
+1. **`linuxX64` is mapped but not exercised in CI.** `KONAN_TO_RID`
+   (`nuget-plugin/.../NugetPlugin.kt:16-22`) maps `linux_x64` → `linux-x64` and `linux_arm64` →
+   `linux-arm64`, and nothing in the link path is Windows-specific except one `-lole32` linker
+   option guarded by `startsWith("mingw")`. But `docs/topics/prerequisites.md` marks both Linux
+   rows **"Exercised in CI: No"**, and the CI matrix is `macos-latest` + `windows-latest` only.
+   The Linux leg — the exact leg that makes gir.core worth adopting — is the least-proven part of
+   the whole proposal. **This is the new decisive gate**, replacing "is the Windows bridge viable".
+
+2. **Toolchain bump required.** The plugin pins Kotlin `2.4.10` / KSP `2.3.10`; we are on Kotlin
+   `2.3.21` / KSP `2.3.2`. Gradle `9.4.1` clears the `9.1` floor and JDK 17+ is satisfied. KSP is
+   pinned to its Kotlin version, so this is one atomic bump across `:shared`, `:androidApp`, and the
+   Compose/AGP 9.2.0 stack — not a `:shared`-local change.
+
+3. **AOT and trimming.** Every callback crossing C# → Kotlin (`Flow`/`StateFlow` collection,
+   `suspend`, lambda parameters, stored callbacks, interface bridging) pins a delegate with
+   `GCHandle` and hands Kotlin a pointer from `Marshal.GetFunctionPointerForDelegate`, which needs a
+   JIT to build the native-to-managed thunk. NativeAOT is out; a Mac Catalyst Release build was
+   verified upstream to throw `ExecutionEngineException`, **silently** in some collection loops.
+   Not a blocker — WinUI 3 and gir.core both run JIT by default — but `windowsApp/TilawaWindows.csproj`
+   currently sets `PublishTrimmed=True` for Release and needs re-verification against the generated
+   bindings. The synchronous, callback-free surface is unaffected.
+
+4. **KT-62984 interacts with the open database gate.** A second Kotlin compiler plugin on a target
+   that links a `sharedLib` can crash at *link* time with an NPE in `CAdapterCodegen.buildCAdapter`,
+   even though compilation succeeds. We already run kotlinx-serialization on `mingwX64`/`linuxX64`
+   without hitting it, but the database gate's likely resolution (Room KMP) adds another compiler
+   plugin and another KSP processor to the same targets. Workaround is a per-target
+   `kotlinCompilerPluginClasspath<Target>` exclusion, but this should be proven before Room is
+   adopted, not after.
+
+5. **The plugin bridges every public declaration by default.** `rootPackage` names the C# namespace
+   only; it does not scope the export set. Scoping needs explicit `publish { include(...)
+   exclude(...) }`. This actually reinforces the boundary rule above — the façade has to be
+   deliberately narrow, and now the build enforces the consequence of not being.
+
+6. **gir.core's missing features.** No overriding of native virtual methods, no custom C#
+   implementations of native GObject interfaces, and fundamental types (`GObject.ParamSpec`,
+   `Gtk.Expression`) only partly bound. `Gtk.Expression` gaps matter for declarative list binding —
+   though the `ListView`, `ColumnView`, `GridView` and `DropDown` samples all work via
+   `SignalListItemFactory` plus `[Subclass<GObject.Object>]` model objects, which covers the
+   virtualized-ayah-list case without expressions.
+
+7. **gir.core ships bindings, not the C libraries.** The runtime needs GTK 4 and libadwaita present
+   on the system; the distribution answer is Flatpak. This is the same runtime dependency the
+   current gtkmm shell has, just moved from link time to load time.
+
+8. **Both projects are pre-1.0.** The plugin's own guidance is the right posture for us too: pin the
+   version, and diff the generated `Interop.cs` on every bump, because that generated file — not the
+   plugin — is the public API our two C# shells compile against.
+
+### Effect on the existing C ABI work
+
+`shared/src/cApiMain/kotlin/.../SharedCApi.kt`, the `abi/` header snapshots, and
+`.agents/scripts/abi-check.sh` were built to hand-manage the portability boundary. If the plugin is
+adopted, KSP generates both the C exports and their C# bindings from ordinary Kotlin declarations,
+and the plugin's own forward ABI contract check (ADR-055) covers drift. The handwritten façade
+becomes redundant rather than wrong — keep it until the plugin path is proven on `linuxX64`, since
+it is also the fallback if that gate fails.
+
+### Recommended next step
+
+Do not rewrite the shells yet. Run one narrow spike, in this order, because step 1 fails cheaply
+and invalidates everything after it:
+
+1. Add `linuxX64` to a throwaway module using the plugin and run `packNuget`. Confirm a
+   `runtimes/linux-x64/native/*.so` lands in the `.nupkg` and that the generated `Interop.cs`
+   compiles and loads on Linux. **If this fails, the C++/gtkmm Linux path stands and only the
+   Windows row changes.**
+2. Bump Kotlin to `2.4.10` / KSP `2.3.10` on a branch and confirm the Android and Apple legs still
+   build — the bump is unavoidable and touches everything.
+3. Port `Greeting` through the plugin, then extend it to one `suspend` call and one `StateFlow`, and
+   consume it from a gir.core `Adw.Application` and from WinUI 3 with the *same* adapter code.
+4. Only then decide whether `linuxApp` becomes C#, and whether `cApiMain` and `abi/` retire.
