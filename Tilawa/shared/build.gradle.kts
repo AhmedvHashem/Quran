@@ -76,8 +76,7 @@ kotlin {
         }
         mingwX64Main.get().dependsOn(cApiMain)
         linuxX64Main.get().dependsOn(cApiMain)
-        macosArm64Main.get().dependsOn(cApiMain)
-        macosX64Main.get().dependsOn(cApiMain)
+        macosMain.get().dependsOn(cApiMain)
 
         commonMain.dependencies {
             implementation(libs.kotlin.coroutines.core)
@@ -88,6 +87,13 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.multiplatform.settings)
             implementation(libs.kermit)
+        }
+        commonTest.dependencies {
+            implementation(libs.testing.kotlin)
+            implementation(libs.testing.kotlin.coroutines)
+            implementation(libs.ktor.client.mock)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)

@@ -1,0 +1,54 @@
+{
+  "featured_reciters": [
+    {
+      "reciter_id": 123,
+      "name": "Mishary Rashid Alafasy",
+      "default_edition_id": 123
+    },
+    {
+      "reciter_id": 54,
+      "name": "Abdur-Rahman As-Sudais",
+      "default_edition_id": 54
+    },
+    {
+      "reciter_id": 31,
+      "name": "Saud Ash-Shuraym",
+      "default_edition_id": 31
+    },
+    {
+      "reciter_id": 118,
+      "name": "Mahmoud Khalil Al-Husary",
+      "default_edition_id": 118
+    },
+    {
+      "reciter_id": 112,
+      "name": "Mohamed Siddiq Al-Minshawi",
+      "default_edition_id": 112
+    },
+    {
+      "reciter_id": 51,
+      "name": "Abdul Basit Abdul Samad",
+      "default_edition_id": 53
+    },
+    {
+      "reciter_id": 30,
+      "name": "Saad Al-Ghamdi",
+      "default_edition_id": 30
+    },
+    {
+      "reciter_id": 74,
+      "name": "Ali Al-Huthaify",
+      "default_edition_id": 74
+    },
+    {
+      "reciter_id": 102,
+      "name": "Maher Al Muaiqly",
+      "default_edition_id": 102
+    },
+    {
+      "reciter_id": 92,
+      "name": "Yasser Al-Dosari",
+      "default_edition_id": 92
+    }
+  ]
+}
