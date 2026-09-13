@@ -1,6 +1,7 @@
 package com.hashem.tilawa.data.local
 
 import com.hashem.tilawa.domain.model.Chapter
+import com.hashem.tilawa.domain.model.ContentManifest
 import com.hashem.tilawa.domain.model.Verse
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -13,12 +14,25 @@ import kotlinx.serialization.json.Json
 internal class LocalQuranTextSource(
     private val chaptersList: List<Chapter> = QuranTextData.chapters,
     private val versesProvider: (Int) -> List<Verse> = { QuranTextData.versesForChapter(it) },
+    val manifest: ContentManifest = CONTENT_MANIFEST,
 ) {
     fun chapters(): List<Chapter> = chaptersList
 
     fun verses(chapterId: Int): List<Verse> = versesProvider(chapterId)
 
     companion object {
+        val CONTENT_MANIFEST = ContentManifest(
+            textEditionId = "uthmani-hafs-v1",
+            displayName = "Uthmani Quran text (Hafs)",
+            source = "QUL (qul.tarteel.ai), exact resource pending verification",
+            revision = "tilawa-bundle-2026-09-13",
+            checksumSha256 = "8d7ecf45e8c7ce6f796102b33081aca53b1e5d46eb6ff31ff6bd553c73523899",
+            license = "Pending source-resource verification; do not distribute",
+            notices = "The bundled bytes are locked by checksum but their exact upstream resource and license are not yet verified.",
+            supportedRiwayahIds = setOf(1),
+            isVerified = false,
+        )
+
         fun fromJson(jsonString: String, json: Json = Json { ignoreUnknownKeys = true }): LocalQuranTextSource {
             val payload = json.decodeFromString<QuranTextPayloadDto>(jsonString)
             val chapters = payload.chapters.map { dto ->

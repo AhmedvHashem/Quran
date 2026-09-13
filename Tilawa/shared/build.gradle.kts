@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.android.multiplatform.library)
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.skie)
+    alias(libs.plugins.kotlin.native.nuget)
 }
 
 // ponytail: SQLDelight removed until a schema lands — its runtime drags
@@ -41,18 +43,10 @@ kotlin {
         }
     }
 
-    listOf(
-        macosArm64(),
-        macosX64()
-    ).forEach { macTarget ->
-        macTarget.binaries.framework {
-            baseName = "Shared"
-            isStatic = true
-            xcf.add(this)
-        }
-        macTarget.binaries.sharedLib {
-            baseName = "Shared"
-        }
+    macosArm64().binaries.framework {
+        baseName = "Shared"
+        isStatic = true
+        xcf.add(this)
     }
 
     linuxX64 {
@@ -70,14 +64,6 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        // C-export façade shared by C-ABI targets (Windows, Linux, macOS GTK)
-        val cApiMain by creating {
-            dependsOn(commonMain.get())
-        }
-        mingwX64Main.get().dependsOn(cApiMain)
-        linuxX64Main.get().dependsOn(cApiMain)
-        macosMain.get().dependsOn(cApiMain)
-
         commonMain.dependencies {
             implementation(libs.kotlin.coroutines.core)
             implementation(libs.kotlin.serialization)
@@ -94,21 +80,34 @@ kotlin {
             implementation(libs.ktor.client.mock)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+            implementation(libs.multiplatform.settings.test)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.multiplatform.settings.no.arg)
         }
         appleMain.dependencies {
             implementation(libs.ktor.client.darwin)
+            implementation(libs.multiplatform.settings.no.arg)
         }
-        // ponytail: no SQLDelight driver on mingw/linux — SQLiter is Apple/Windows-only
-        // and mingw cross-link from macOS lacks system sqlite3. Gate: .ai/arch/APP_STACKS_PLAN.md
-        // (likely resolution: Room KMP with bundled sqlite). Ktor/settings/kermit work here.
         mingwX64Main.dependencies {
             implementation(libs.ktor.client.curl)
+            implementation(libs.multiplatform.settings.no.arg)
         }
         linuxX64Main.dependencies {
             implementation(libs.ktor.client.curl)
         }
+    }
+}
+
+nuget {
+    publish {
+        packageId = "Tilawa.Core"
+        version = "0.1.0"
+        authors = "Tilawa"
+        description = "Tilawa shared Quran catalog and playback-domain core"
+        rootPackage = "com.hashem.tilawa"
+        include("com.hashem.tilawa.api")
+        include("com.hashem.tilawa.domain.model")
     }
 }

@@ -30,6 +30,31 @@ data class RecitationEdition(
     val isFeatured: Boolean = false,
 )
 
+/** Stable identity for one provider recording revision. */
+@Serializable
+data class RecordingIdentity(
+    val provider: String,
+    val editionId: Int,
+    val reciterId: Int,
+    val riwayahId: Int?,
+    val style: String,
+    val revision: String,
+)
+
+/** Provenance and compatibility contract for the bundled Quran text. */
+@Serializable
+data class ContentManifest(
+    val textEditionId: String,
+    val displayName: String,
+    val source: String,
+    val revision: String,
+    val checksumSha256: String,
+    val license: String,
+    val notices: String,
+    val supportedRiwayahIds: Set<Int>,
+    val isVerified: Boolean,
+)
+
 @Serializable
 data class Chapter(
     val id: Int,
@@ -57,10 +82,39 @@ data class VerseTiming(
     val endMs: Long,
 )
 
+enum class TextAvailability { VERIFIED, AUDIO_ONLY }
+
+enum class DownloadStatus { NOT_DOWNLOADED, DOWNLOADING, DOWNLOADED, FAILED }
+
+@Serializable
+data class DownloadRecord(
+    val editionId: Int,
+    val chapterId: Int,
+    val status: DownloadStatus,
+    val localPath: String? = null,
+    val checksumSha256: String? = null,
+    val byteCount: Long? = null,
+    val identity: RecordingIdentity? = null,
+    val textEditionId: String? = null,
+    val timing: List<VerseTiming>? = null,
+    val failureMessage: String? = null,
+)
+
+internal enum class QuranErrorCode { NETWORK, EDITION_NOT_FOUND, SURAH_UNAVAILABLE }
+
+internal class QuranException(
+    val code: QuranErrorCode,
+    val retryable: Boolean,
+    message: String,
+) : Exception(message)
+
 /** One playable surah: exactly one audio file, plus timing only when the edition has it. */
 @Serializable
 data class PlaybackTrack(
+    val identity: RecordingIdentity,
+    val chapterId: Int,
     val trackUrl: String,
     val verses: List<Verse>,
     val timing: List<VerseTiming>?,
+    val textAvailability: TextAvailability,
 )

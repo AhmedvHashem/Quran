@@ -1,87 +1,75 @@
 package com.hashem.tilawa.data
 
+import com.hashem.tilawa.domain.model.DownloadRecord
+import com.hashem.tilawa.domain.model.DownloadStatus
 import com.russhwolf.settings.Settings
-import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
-@Serializable
-enum class DownloadStatus {
-    NOT_DOWNLOADED,
-    DOWNLOADING,
-    DOWNLOADED,
-}
-
-/**
- * Narrow interface for tracking and querying per-edition surah downloads.
- */
-interface DownloadStore {
-    fun status(editionId: Int, chapterId: Int): DownloadStatus
-    fun localPath(editionId: Int, chapterId: Int): String?
-    fun setStatus(editionId: Int, chapterId: Int, status: DownloadStatus, localPath: String? = null)
+internal interface DownloadStore {
+    fun record(editionId: Int, chapterId: Int): DownloadRecord
+    fun set(record: DownloadRecord)
     fun remove(editionId: Int, chapterId: Int)
+
+    fun reconcile(
+        editionId: Int,
+        chapterId: Int,
+        fileExists: Boolean,
+        actualChecksumSha256: String?,
+        actualByteCount: Long?,
+    ): DownloadRecord {
+        val record = record(editionId, chapterId)
+        if (record.status != DownloadStatus.DOWNLOADED) return record
+
+        val valid = fileExists &&
+            !record.localPath.isNullOrBlank() &&
+            (record.checksumSha256 == null || record.checksumSha256.equals(actualChecksumSha256, ignoreCase = true)) &&
+            (record.byteCount == null || record.byteCount == actualByteCount)
+        if (valid) return record
+
+        remove(editionId, chapterId)
+        return emptyRecord(editionId, chapterId)
+    }
 }
 
-/**
- * In-memory implementation of DownloadStore.
- */
-class InMemoryDownloadStore : DownloadStore {
-    private val statuses = mutableMapOf<Pair<Int, Int>, DownloadStatus>()
-    private val paths = mutableMapOf<Pair<Int, Int>, String>()
+internal class InMemoryDownloadStore : DownloadStore {
+    private val records = mutableMapOf<Pair<Int, Int>, DownloadRecord>()
 
-    override fun status(editionId: Int, chapterId: Int): DownloadStatus =
-        statuses[editionId to chapterId] ?: DownloadStatus.NOT_DOWNLOADED
+    override fun record(editionId: Int, chapterId: Int): DownloadRecord =
+        records[editionId to chapterId] ?: emptyRecord(editionId, chapterId)
 
-    override fun localPath(editionId: Int, chapterId: Int): String? =
-        paths[editionId to chapterId]
-
-    override fun setStatus(editionId: Int, chapterId: Int, status: DownloadStatus, localPath: String?) {
-        statuses[editionId to chapterId] = status
-        if (localPath != null) {
-            paths[editionId to chapterId] = localPath
-        } else if (status == DownloadStatus.NOT_DOWNLOADED) {
-            paths.remove(editionId to chapterId)
-        }
+    override fun set(record: DownloadRecord) {
+        records[record.editionId to record.chapterId] = record
     }
 
     override fun remove(editionId: Int, chapterId: Int) {
-        statuses.remove(editionId to chapterId)
-        paths.remove(editionId to chapterId)
+        records.remove(editionId to chapterId)
     }
 }
 
-/**
- * Implementation backed by multiplatform-settings.
- */
-class SettingsDownloadStore(
+internal class SettingsDownloadStore(
     private val settings: Settings,
+    private val json: Json = Json { ignoreUnknownKeys = true },
 ) : DownloadStore {
+    override fun record(editionId: Int, chapterId: Int): DownloadRecord =
+        settings.getStringOrNull(key(editionId, chapterId))
+            ?.let { runCatching { json.decodeFromString<DownloadRecord>(it) }.getOrNull() }
+            ?: emptyRecord(editionId, chapterId)
 
-    override fun status(editionId: Int, chapterId: Int): DownloadStatus {
-        val raw = settings.getStringOrNull(statusKey(editionId, chapterId)) ?: return DownloadStatus.NOT_DOWNLOADED
-        return try {
-            DownloadStatus.valueOf(raw)
-        } catch (e: Exception) {
-            DownloadStatus.NOT_DOWNLOADED
-        }
-    }
-
-    override fun localPath(editionId: Int, chapterId: Int): String? {
-        return settings.getStringOrNull(pathKey(editionId, chapterId))
-    }
-
-    override fun setStatus(editionId: Int, chapterId: Int, status: DownloadStatus, localPath: String?) {
-        settings.putString(statusKey(editionId, chapterId), status.name)
-        if (localPath != null) {
-            settings.putString(pathKey(editionId, chapterId), localPath)
-        } else if (status == DownloadStatus.NOT_DOWNLOADED) {
-            settings.remove(pathKey(editionId, chapterId))
-        }
+    override fun set(record: DownloadRecord) {
+        settings.putString(key(record.editionId, record.chapterId), json.encodeToString(record))
     }
 
     override fun remove(editionId: Int, chapterId: Int) {
-        settings.remove(statusKey(editionId, chapterId))
-        settings.remove(pathKey(editionId, chapterId))
+        settings.remove(key(editionId, chapterId))
     }
 
-    private fun statusKey(editionId: Int, chapterId: Int) = "download_status_${editionId}_$chapterId"
-    private fun pathKey(editionId: Int, chapterId: Int) = "download_path_${editionId}_$chapterId"
+    private fun key(editionId: Int, chapterId: Int) = "download_${editionId}_$chapterId"
 }
+
+internal fun emptyRecord(editionId: Int, chapterId: Int) = DownloadRecord(
+    editionId = editionId,
+    chapterId = chapterId,
+    status = DownloadStatus.NOT_DOWNLOADED,
+)
+
+internal expect fun defaultDownloadStore(): DownloadStore

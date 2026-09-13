@@ -5,7 +5,9 @@ import com.hashem.tilawa.domain.model.Chapter
 import com.hashem.tilawa.domain.model.PlaybackTrack
 import com.hashem.tilawa.domain.model.RecitationEdition
 import com.hashem.tilawa.domain.model.Reciter
+import com.hashem.tilawa.domain.model.RecordingIdentity
 import com.hashem.tilawa.domain.model.Riwayah
+import com.hashem.tilawa.domain.model.TextAvailability
 import com.hashem.tilawa.domain.model.Verse
 import com.hashem.tilawa.domain.model.VerseTiming
 import kotlinx.coroutines.test.runTest
@@ -15,7 +17,14 @@ import kotlin.test.assertNull
 
 private class FakeRepository(
     private val editionsList: List<RecitationEdition> = emptyList(),
-    private val track: PlaybackTrack = PlaybackTrack("", emptyList(), null),
+    private val track: PlaybackTrack = PlaybackTrack(
+        RecordingIdentity("mp3quran.net", 101, 1, 1, "Murattal", "revision-1"),
+        1,
+        "",
+        emptyList(),
+        null,
+        TextAvailability.AUDIO_ONLY,
+    ),
 ) : QuranRepository {
     override suspend fun reciters(): List<Reciter> = emptyList()
     override suspend fun editions(reciterId: Int): List<RecitationEdition> = editionsList
@@ -29,9 +38,12 @@ class GetSurahTest {
     @Test
     fun `returns playback track for surah and edition`() = runTest {
         val expectedTrack = PlaybackTrack(
+            identity = RecordingIdentity("mp3quran.net", 101, 1, 1, "Murattal", "revision-1"),
+            chapterId = 1,
             trackUrl = "https://server6.mp3quran.net/akdr/001.mp3",
             verses = listOf(Verse(1, "بِسْمِ ٱللَّهِ"), Verse(2, "ٱلْحَمْدُ لِلَّهِ")),
             timing = listOf(VerseTiming(1, 0, 5000), VerseTiming(2, 5000, 10000)),
+            textAvailability = TextAvailability.VERIFIED,
         )
         val getSurah = GetSurah(FakeRepository(track = expectedTrack))
 
@@ -42,9 +54,12 @@ class GetSurahTest {
     @Test
     fun `returns playback track without timing when untimed`() = runTest {
         val expectedTrack = PlaybackTrack(
+            identity = RecordingIdentity("mp3quran.net", 102, 1, 1, "Murattal", "revision-1"),
+            chapterId = 1,
             trackUrl = "https://server6.mp3quran.net/akdr/001.mp3",
             verses = listOf(Verse(1, "بِسْمِ ٱللَّهِ")),
             timing = null,
+            textAvailability = TextAvailability.VERIFIED,
         )
         val getSurah = GetSurah(FakeRepository(track = expectedTrack))
 

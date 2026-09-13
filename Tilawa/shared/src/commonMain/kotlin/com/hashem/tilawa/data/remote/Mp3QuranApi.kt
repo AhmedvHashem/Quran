@@ -2,8 +2,10 @@ package com.hashem.tilawa.data.remote
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -15,29 +17,36 @@ import kotlinx.serialization.json.Json
 internal class Mp3QuranApi(private val http: HttpClient) {
 
     suspend fun reciters(language: String = "eng"): List<Mp3QuranReciterDto> =
-        http.get("$BASE/reciters") {
-            url.parameters.append("language", language)
-        }.body<Mp3QuranRecitersDto>().reciters
+        get<Mp3QuranRecitersDto>("reciters", "language" to language).reciters
 
     suspend fun riwayat(language: String = "eng"): List<Mp3QuranRiwayahDto> =
-        http.get("$BASE/riwayat") {
-            url.parameters.append("language", language)
-        }.body<Mp3QuranRiwayatDto>().riwayat
+        get<Mp3QuranRiwayatDto>("riwayat", "language" to language).riwayat
 
     suspend fun timedReads(): List<Mp3QuranTimedReadDto> =
-        http.get("$BASE/ayat_timing/reads")
-            .body<List<Mp3QuranTimedReadDto>>()
+        get("ayat_timing/reads")
 
     suspend fun timing(surahId: Int, readId: Int): List<Mp3QuranAyahTimingDto> =
-        http.get("$BASE/ayat_timing") {
-            url.parameters.append("surah", surahId.toString())
-            url.parameters.append("read", readId.toString())
-        }.body<List<Mp3QuranAyahTimingDto>>()
+        get("ayat_timing", "surah" to surahId.toString(), "read" to readId.toString())
+
+    private suspend inline fun <reified T> get(path: String, vararg parameters: Pair<String, String>): T {
+        val response = http.get("$BASE/$path") {
+            parameters.forEach { (name, value) -> url.parameters.append(name, value) }
+        }
+        check(response.status.isSuccess()) { "MP3Quran returned HTTP ${response.status.value}" }
+        return response.body()
+    }
 
     companion object {
         private const val BASE = "https://www.mp3quran.net/api/v3"
+        private const val REQUEST_TIMEOUT_MS = 15_000L
 
         fun defaultClient() = HttpClient {
+            expectSuccess = true
+            install(HttpTimeout) {
+                requestTimeoutMillis = REQUEST_TIMEOUT_MS
+                connectTimeoutMillis = REQUEST_TIMEOUT_MS
+                socketTimeoutMillis = REQUEST_TIMEOUT_MS
+            }
             install(ContentNegotiation) {
                 json(Json {
                     ignoreUnknownKeys = true

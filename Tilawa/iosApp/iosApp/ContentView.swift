@@ -2,29 +2,35 @@ import Shared
 import SwiftUI
 
 struct ContentView: View {
-    @State private var showContent = false
+    @State private var status = "Loading reciters…"
+    private let library = QuranLibrary()
+
     var body: some View {
         NavigationStack {
-            VStack {
-                Button("Click me!") {
-                    withAnimation {
-                        showContent = !showContent
-                    }
+            VStack(spacing: 16) {
+                if status.hasPrefix("Loading") {
+                    ProgressView()
                 }
-
-                if showContent {
-                    VStack(spacing: 16) {
-                        Image(systemName: "swift")
-                            .font(.system(size: 200))
-                            .foregroundColor(.accentColor)
-                        Text("SwiftUI: \(Greeting().greet())")
-                    }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
+                Text(status)
+                    .multilineTextAlignment(.center)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
-            .navigationTitle("Kotlin Multiplatform")
+            .navigationTitle("Tilawa")
+            .task { await loadReciters() }
+        }
+    }
+
+    @MainActor
+    private func loadReciters() async {
+        do {
+            let reciters = try await library.reciters()
+            guard !Task.isCancelled else { return }
+            status = "\(reciters.count) reciters available"
+        } catch is CancellationError {
+            return
+        } catch {
+            status = "Could not load reciters: \(error.localizedDescription)"
         }
     }
 }

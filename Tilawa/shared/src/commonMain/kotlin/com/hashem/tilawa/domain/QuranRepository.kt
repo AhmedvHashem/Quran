@@ -10,7 +10,7 @@ import com.hashem.tilawa.domain.model.Verse
  * The domain's port onto the Quran catalogue. Implemented in `data`, so nothing
  * below this interface knows about HTTP, JSON, or external APIs.
  */
-interface QuranRepository {
+internal interface QuranRepository {
     suspend fun reciters(): List<Reciter>
     suspend fun editions(reciterId: Int): List<RecitationEdition>
     suspend fun chapters(): List<Chapter>

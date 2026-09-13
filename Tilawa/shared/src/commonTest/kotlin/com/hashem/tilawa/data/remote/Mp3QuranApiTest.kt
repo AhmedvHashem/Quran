@@ -6,12 +6,14 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class Mp3QuranApiTest {
 
@@ -145,5 +147,14 @@ class Mp3QuranApiTest {
         assertEquals(1, timing[1].ayah)
         assertEquals(5000L, timing[1].startTime)
         assertEquals(12000L, timing[1].endTime)
+    }
+
+    @Test
+    fun `rejects unsuccessful HTTP status`() = runTest {
+        val api = Mp3QuranApi(
+            HttpClient(MockEngine { respond("{}", status = HttpStatusCode.ServiceUnavailable) })
+        )
+
+        assertFailsWith<IllegalStateException> { api.reciters() }
     }
 }

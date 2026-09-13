@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Shared
 import SwiftUI
 
@@ -23,6 +24,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isFavourite = false
 
     private let library: QuranLibrary
+    private var playbackTrack: PlaybackTrack?
     private var playerChanges: AnyCancellable?
 
     init(library: QuranLibrary, reciter: Reciter, edition: RecitationEdition) {
@@ -80,10 +82,12 @@ final class PlayerViewModel: ObservableObject {
         self.timing = nil
         self.verseIndex = nil
         self.errorMessage = nil
+        self.playbackTrack = nil
         isLoading = true
         defer { isLoading = false }
         do {
             let track = try await library.surah(chapterId: chapter.id, editionId: edition.id)
+            self.playbackTrack = track
             self.verses = track.verses
             self.timing = track.timing
             self.trackUrl = track.trackUrl
@@ -98,7 +102,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Downloads
 
     func downloadStatus(for chapter: Chapter) -> DownloadStatus {
-        library.downloadStatus(editionId: edition.id, chapterId: chapter.id)
+        library.download(editionId: edition.id, chapterId: chapter.id).status
     }
 
     func downloadCurrentChapter() async {
@@ -107,21 +111,22 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func downloadChapter(_ chapter: Chapter) async {
-        library.setDownloadStatus(editionId: edition.id, chapterId: chapter.id, status: .downloading)
+        guard chapter.id == self.chapter?.id, let playbackTrack else { return }
+        library.beginDownload(editionId: edition.id, chapterId: chapter.id)
         objectWillChange.send()
 
         do {
             let padded = String(format: "%03d", chapter.id)
             let server = edition.serverBaseUrl.hasSuffix("/") ? edition.serverBaseUrl : "\(edition.serverBaseUrl)/"
             guard let remoteUrl = URL(string: "\(server)\(padded).mp3") else {
-                library.setDownloadStatus(editionId: edition.id, chapterId: chapter.id, status: .notDownloaded)
+                library.failDownload(editionId: edition.id, chapterId: chapter.id, message: "Invalid audio URL")
                 objectWillChange.send()
                 return
             }
 
             let (tempUrl, response) = try await URLSession.shared.download(from: remoteUrl)
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                library.setDownloadStatus(editionId: edition.id, chapterId: chapter.id, status: .notDownloaded)
+                library.failDownload(editionId: edition.id, chapterId: chapter.id, message: "Download failed")
                 objectWillChange.send()
                 return
             }
@@ -137,10 +142,18 @@ final class PlayerViewModel: ObservableObject {
             }
             try fileManager.moveItem(at: tempUrl, to: destFile)
 
-            library.markDownloaded(editionId: edition.id, chapterId: chapter.id, localPath: destFile.absoluteString)
+            let data = try Data(contentsOf: destFile, options: .mappedIfSafe)
+            let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            library.completeDownload(
+                chapterId: chapter.id,
+                track: playbackTrack,
+                localPath: destFile.absoluteString,
+                checksumSha256: checksum,
+                byteCount: Int64(data.count)
+            )
             objectWillChange.send()
         } catch {
-            library.setDownloadStatus(editionId: edition.id, chapterId: chapter.id, status: .notDownloaded)
+            library.failDownload(editionId: edition.id, chapterId: chapter.id, message: error.localizedDescription)
             objectWillChange.send()
         }
     }
