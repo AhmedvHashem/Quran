@@ -91,7 +91,7 @@ kotlin {
             implementation(libs.multiplatform.settings.no.arg)
         }
         mingwX64Main.dependencies {
-            implementation(libs.ktor.client.curl)
+            implementation(libs.ktor.client.winhttp)
             implementation(libs.multiplatform.settings.no.arg)
         }
         linuxX64Main.dependencies {
