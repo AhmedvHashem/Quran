@@ -22,13 +22,22 @@ struct ChapterSidebar: View {
             ScrollView {
                 LazyVStack(spacing: 1) {
                     ForEach(viewModel.chapters, id: \.self) { chapter in
-                        ChapterRow(
-                            chapter: chapter,
-                            isSelected: chapter.id == viewModel.chapter?.id,
-                            isAvailable: viewModel.edition.availableSurahs.contains(KotlinInt(int: chapter.id)),
-                            downloadStatus: viewModel.downloadStatus(for: chapter)
-                        )
-                        .onTapGesture { Task { await viewModel.open(chapter) } }
+                        let available = viewModel.isAvailable(chapter)
+                        Button {
+                            Task { await viewModel.open(chapter) }
+                        } label: {
+                            ChapterRow(
+                                chapter: chapter,
+                                isSelected: chapter.id == viewModel.chapter?.id,
+                                isAvailable: available,
+                                downloadStatus: viewModel.downloadStatus(for: chapter)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!available)
+                        .help(available ? "Open \(chapter.name)" : "Unavailable in this recording")
+                        .accessibilityLabel("\(chapter.name), \(chapter.arabicName)")
+                        .accessibilityHint(available ? "Open surah" : "Unavailable in this recording")
                     }
                 }
                 .padding(.horizontal, 9)
@@ -64,10 +73,14 @@ private struct ChapterRow: View {
                     } else if downloadStatus == .downloading {
                         ProgressView()
                             .controlSize(.mini)
+                    } else if downloadStatus == .failed {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.system(size: 9))
+                            .foregroundStyle(isSelected ? .white : .red)
                     }
 
                     if !isAvailable {
-                        Text("unavailable")
+                        Text("Unavailable")
                             .font(.system(size: 9))
                             .foregroundStyle(Theme.labelSecondary.opacity(0.8))
                     }

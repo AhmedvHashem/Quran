@@ -1,5 +1,7 @@
 package com.hashem.tilawa.data
 
+import com.hashem.tilawa.api.quranRequest
+
 import com.hashem.tilawa.data.local.LocalQuranTextSource
 import com.hashem.tilawa.data.remote.Mp3QuranApi
 import com.hashem.tilawa.domain.model.Chapter
@@ -38,14 +40,33 @@ private data class MockRoute(
     val responseJson: String,
     val status: HttpStatusCode = HttpStatusCode.OK,
     var failuresRemaining: Int = 0,
-    val failure: Throwable? = null,
+    var failure: Throwable? = null,
     var attempts: Int = 0,
 )
 
 class QuranRepositoryImplTest {
 
+    @Test
+    fun `native result preserves failure code retryability and cancellation without leaking provider details`() = runTest {
+        val (empty, noFailure) = quranRequest { emptyList<Reciter>() }
+        assertEquals(emptyList(), empty)
+        assertNull(noFailure)
+        val (value, failure) = quranRequest<Reciter> {
+            throw QuranException(QuranErrorCode.NETWORK, true, "https://provider/internal")
+        }
+        assertNull(value)
+        assertEquals(QuranErrorCode.NETWORK, failure?.code)
+        assertEquals(true, failure?.retryable)
+        assertFalse(failure!!.message.contains("provider"))
+        assertFailsWith<CancellationException> { quranRequest { throw CancellationException("cancelled") } }
+    }
+
     private fun verifiedTextSource() = LocalQuranTextSource(
         manifest = LocalQuranTextSource.CONTENT_MANIFEST.copy(isVerified = true),
+    )
+
+    private fun unverifiedTextSource() = LocalQuranTextSource(
+        manifest = LocalQuranTextSource.CONTENT_MANIFEST.copy(isVerified = false),
     )
 
     private fun createRepository(
@@ -190,7 +211,7 @@ class QuranRepositoryImplTest {
                     pathSuffix = "/ayat_timing/reads",
                     responseJson = """
                         [
-                          { "id": 101, "name": "Ibrahim Al-Akdar" }
+                          { "id": 101, "name": "Ibrahim Al-Akdar", "folder_url": "https://server6.mp3quran.net/akdr/" }
                         ]
                     """,
                 ),
@@ -261,7 +282,7 @@ class QuranRepositoryImplTest {
                 ),
                 MockRoute(
                     pathSuffix = "/ayat_timing/reads",
-                    responseJson = """[ { "id": 101 } ]""",
+                    responseJson = """[ { "id": 101, "folder_url": "https://server6.mp3quran.net/akdr/" } ]""",
                 ),
                 MockRoute(
                     pathSuffix = "/ayat_timing",
@@ -308,6 +329,8 @@ class QuranRepositoryImplTest {
                 chapterId = 1,
                 status = DownloadStatus.DOWNLOADED,
                 localPath = "file:///local/cache/001.mp3",
+                checksumSha256 = "a".repeat(64),
+                byteCount = 42,
                 identity = RecordingIdentity("mp3quran.net", 101, 1, 1, "Murattal", "revision-1"),
             )
         )
@@ -351,7 +374,8 @@ class QuranRepositoryImplTest {
                 ),
                 MockRoute("/reciters", "language=ar", """{ "reciters": [] }"""),
                 MockRoute("/riwayat", responseJson = """{ "riwayat": [{ "id": 1, "name": "Rewayat Hafs" }] }"""),
-            )
+            ),
+            customTextSource = unverifiedTextSource(),
         )
 
         val track = repo.playbackTrack(1, 101)
@@ -395,4 +419,68 @@ class QuranRepositoryImplTest {
 
         assertFailsWith<CancellationException> { repo.reciters() }
     }
+    private fun playbackRoutes(timedReads: MockRoute) = listOf(
+        MockRoute("/reciters", "language=eng", """{"reciters":[{"id":1,"name":"Reciter","moshaf":[{"id":101,"name":"Hafs","rewaya_id":1,"server":"https://audio/","surah_list":"0,1,115,bad"}]}]}"""),
+        MockRoute("/reciters", "language=ar", """{"reciters":[]}"""),
+        MockRoute("/riwayat", responseJson = """{"riwayat":[{"id":1,"name":"Rewayat Hafs"}]}"""),
+        timedReads,
+        MockRoute("/ayat_timing", responseJson = "[]"),
+    )
+
+    @Test
+    fun `timing discovery failure degrades and retries without blocking editions or audio`() = runTest {
+        val reads = MockRoute("/ayat_timing/reads", responseJson = """[{"id":101,"folder_url":"https://audio/"}]""", failuresRemaining = 2)
+        val repo = createRepository(playbackRoutes(reads))
+        assertFalse(repo.editions(1).single().hasTiming)
+        val track = repo.playbackTrack(1, 101)
+        assertEquals("https://audio/001.mp3", track.trackUrl)
+        assertNull(track.timing)
+        assertTrue(repo.editions(1).single().hasTiming)
+        assertEquals(3, reads.attempts)
+    }
+
+    @Test
+    fun `timing requires matching recording folder and unavailable surahs are filtered`() = runTest {
+        val routes = playbackRoutes(MockRoute("/ayat_timing/reads", responseJson = """[{"id":101,"folder_url":"https://different-recording/"}]"""))
+        val repo = createRepository(routes)
+        val edition = repo.editions(1).single()
+        assertEquals(setOf(1), edition.availableSurahs)
+        assertFalse(edition.hasTiming)
+        assertNull(repo.playbackTrack(1, 101).timing)
+        assertEquals(0, routes.last().attempts)
+        assertFailsWith<QuranException> { repo.playbackTrack(115, 101) }
+    }
+
+    @Test
+    fun `timing cancellation propagates and does not poison retry`() = runTest {
+        val reads = MockRoute("/ayat_timing/reads", responseJson = "[]", failure = CancellationException("cancelled"))
+        val repo = createRepository(playbackRoutes(reads))
+        assertFailsWith<CancellationException> { repo.playbackTrack(1, 101) }
+        reads.failure = null
+        assertNull(repo.playbackTrack(1, 101).timing)
+        assertEquals(2, reads.attempts)
+    }
+
+    @Test
+    fun `incompatible riwayah has no text or timing even when the timing service supports it`() = runTest {
+        val routes = playbackRoutes(MockRoute("/ayat_timing/reads", responseJson = "[]"))
+        val incompatible = LocalQuranTextSource(manifest = LocalQuranTextSource.CONTENT_MANIFEST.copy(supportedRiwayahIds = setOf(2)))
+        val track = createRepository(routes, customTextSource = incompatible).playbackTrack(1, 101)
+        assertEquals(TextAvailability.AUDIO_ONLY, track.textAvailability)
+        assertTrue(track.verses.isEmpty())
+        assertNull(track.timing)
+        assertEquals(0, routes[3].attempts)
+    }
+
+    @Test
+    fun `successful empty catalog is cached but cancelled catalog can retry`() = runTest {
+        val english = MockRoute("/reciters", "language=eng", """{"reciters":[]}""", failure = CancellationException("cancelled"))
+        val repo = createRepository(listOf(english, MockRoute("/reciters", "language=ar", """{"reciters":[]}""")))
+        assertFailsWith<CancellationException> { repo.reciters() }
+        english.failure = null
+        assertTrue(repo.reciters().isEmpty())
+        assertTrue(repo.reciters().isEmpty())
+        assertEquals(2, english.attempts)
+    }
+
 }

@@ -22,8 +22,17 @@ namespace TilawaWindows
         {
             try
             {
-                var reciters = await _library.RecitersAsync(_closed.Token);
-                GreetingText.Text = $"{reciters.Count} reciters available";
+                using var result = await _library.RecitersAsync(_closed.Token);
+                using var failure = result.Failure;
+                var reciters = result.Reciters;
+                try
+                {
+                    GreetingText.Text = failure?.Message ?? $"{reciters.Count} reciters available";
+                }
+                finally
+                {
+                    foreach (var reciter in reciters) reciter.Dispose();
+                }
             }
             catch (OperationCanceledException)
             {

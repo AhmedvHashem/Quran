@@ -4,9 +4,9 @@ import com.hashem.tilawa.data.local.LocalQuranTextSource
 import com.hashem.tilawa.data.remote.Mp3QuranApi
 import com.hashem.tilawa.data.remote.Mp3QuranMoshafDto
 import com.hashem.tilawa.data.remote.Mp3QuranReciterDto
+import com.hashem.tilawa.data.remote.Mp3QuranTimedReadDto
 import com.hashem.tilawa.domain.QuranRepository
 import com.hashem.tilawa.domain.model.Chapter
-import com.hashem.tilawa.domain.model.DownloadStatus
 import com.hashem.tilawa.domain.model.PlaybackTrack
 import com.hashem.tilawa.domain.model.QuranErrorCode
 import com.hashem.tilawa.domain.model.QuranException
@@ -32,12 +32,12 @@ internal class QuranRepositoryImpl(
     private val mutex = Mutex()
     private var cachedReciters: Pair<List<Mp3QuranReciterDto>, List<Mp3QuranReciterDto>>? = null
     private var cachedRiwayat: Map<Int, String>? = null
-    private var cachedTimedReadIds: Set<Int>? = null
+    private var cachedTimedReads: List<Mp3QuranTimedReadDto>? = null
 
     companion object {
         private const val PROVIDER = "mp3quran.net"
         private val FEATURED_RECITER_ORDER = listOf(123, 54, 31, 118, 112, 51, 30, 74, 102, 92)
-        private val FEATURED_EDITION_IDS = setOf(123, 54, 31, 118, 112, 53, 30, 74, 102, 92)
+        private val FEATURED_EDITION_IDS = setOf(123, 54, 31, 118, 112, 51, 30, 74, 102, 92)
     }
 
     override suspend fun reciters(): List<Reciter> {
@@ -53,8 +53,8 @@ internal class QuranRepositoryImpl(
     override suspend fun editions(reciterId: Int): List<RecitationEdition> {
         val reciter = loadRecitersData().first.find { it.id == reciterId } ?: return emptyList()
         val riwayat = loadRiwayat()
-        val timedReadIds = loadTimedReadIds()
-        return reciter.moshaf.map { it.toEdition(reciterId, riwayat, timedReadIds) }
+        val timedReads = loadTimedReads()
+        return reciter.moshaf.map { it.toEdition(reciterId, riwayat, timedReads) }
     }
 
     override suspend fun chapters(): List<Chapter> = localTextSource.chapters()
@@ -62,18 +62,19 @@ internal class QuranRepositoryImpl(
     override suspend fun verses(chapterId: Int): List<Verse> = localTextSource.verses(chapterId)
 
     override suspend fun playbackTrack(chapterId: Int, editionId: Int): PlaybackTrack {
+        if (chapterId !in 1..114) {
+            throw QuranException(QuranErrorCode.SURAH_UNAVAILABLE, false, "Invalid surah $chapterId")
+        }
         val downloaded = downloadStore.record(editionId, chapterId)
-        if (downloaded.status == DownloadStatus.DOWNLOADED &&
-            !downloaded.localPath.isNullOrBlank() &&
-            downloaded.identity != null
-        ) {
+        if (downloaded.hasCompleteMetadata()) {
+            val identity = checkNotNull(downloaded.identity)
             val compatible = downloaded.textEditionId == localTextSource.manifest.textEditionId &&
-                isTextCompatible(downloaded.identity)
+                isTextCompatible(identity)
             val verses = if (compatible) localTextSource.verses(chapterId) else emptyList()
             return PlaybackTrack(
-                identity = downloaded.identity,
+                identity = identity,
                 chapterId = chapterId,
-                trackUrl = downloaded.localPath,
+                trackUrl = checkNotNull(downloaded.localPath),
                 verses = verses,
                 timing = if (compatible) downloaded.timing.validatedTiming(verses.size) else null,
                 textAvailability = if (compatible) TextAvailability.VERIFIED else TextAvailability.AUDIO_ONLY,
@@ -104,7 +105,7 @@ internal class QuranRepositoryImpl(
         )
         val compatible = isTextCompatible(identity)
         val verses = if (compatible) localTextSource.verses(chapterId) else emptyList()
-        val timing = if (compatible && editionId in loadTimedReadIds()) {
+        val timing = if (compatible && moshaf.matchesTiming(loadTimedReads())) {
             try {
                 remote { api.timing(chapterId, editionId) }
                     .map { VerseTiming(it.ayah, it.startTime, it.endTime) }
@@ -147,9 +148,14 @@ internal class QuranRepositoryImpl(
         remote { api.riwayat("eng") }.associate { it.id to it.name }.also { cachedRiwayat = it }
     }
 
-    private suspend fun loadTimedReadIds(): Set<Int> = mutex.withLock {
-        cachedTimedReadIds?.let { return@withLock it }
-        remote { api.timedReads() }.map { it.id }.toSet().also { cachedTimedReadIds = it }
+    private suspend fun loadTimedReads(): List<Mp3QuranTimedReadDto> = try {
+        mutex.withLock {
+            cachedTimedReads?.let { return@withLock it }
+            remote { api.timedReads() }.also { cachedTimedReads = it }
+        }
+    } catch (_: QuranException) {
+        // Timing is optional; do not cache an outage as a successful empty response.
+        emptyList()
     }
 
     private suspend fun <T> remote(block: suspend () -> T): T = try {
@@ -185,7 +191,7 @@ internal class QuranRepositoryImpl(
     private fun Mp3QuranMoshafDto.toEdition(
         reciterId: Int,
         riwayatMap: Map<Int, String>,
-        timedReadIds: Set<Int>,
+        timedReads: List<Mp3QuranTimedReadDto>,
     ): RecitationEdition {
         val (riwayah, style) = deriveRiwayahAndStyle(this, riwayatMap)
         return RecitationEdition(
@@ -195,13 +201,17 @@ internal class QuranRepositoryImpl(
             style = style,
             serverBaseUrl = server.withTrailingSlash(),
             availableSurahs = availableSurahs(),
-            hasTiming = id in timedReadIds,
+            hasTiming = riwayah.id in localTextSource.manifest.supportedRiwayahIds &&
+                localTextSource.manifest.isVerified && matchesTiming(timedReads),
             isFeatured = id in FEATURED_EDITION_IDS,
         )
     }
 
     private fun Mp3QuranMoshafDto.availableSurahs(): Set<Int> =
-        surahList.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+        surahList.split(',').mapNotNull { it.trim().toIntOrNull() }.filter { it in 1..114 }.toSet()
+
+    private fun Mp3QuranMoshafDto.matchesTiming(reads: List<Mp3QuranTimedReadDto>): Boolean =
+        reads.any { it.id == id && it.folderUrl?.trimEnd('/') == server.trimEnd('/') }
 
     private fun String.withTrailingSlash() = if (endsWith('/')) this else "$this/"
 

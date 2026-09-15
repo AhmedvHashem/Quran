@@ -1,6 +1,6 @@
 # Tilawa product definition and features
 
-Status: authoritative product source of truth. Updated 2026-09-13.
+Status: authoritative product source of truth. Updated 2026-09-15.
 
 This document defines what Tilawa is, how it behaves and how it should feel. Platform implementation is defined in [APP_STACKS_PLAN.md](arch/APP_STACKS_PLAN.md).
 
@@ -219,6 +219,7 @@ The macOS implementation is the living behavioral reference. This product docume
 ### Quran text
 
 - Quran text and chapter metadata are bundled for fully offline reading.
+- The checksum-pinned bundled Hafs text is approved for v1 display; exact upstream attribution and redistribution terms remain a release gate.
 - The initial text edition must be explicitly identified and verified.
 - Text compatibility with riwayah and recording edition is checked before display.
 - A mismatched recording may remain playable as clearly labeled audio-only content.
@@ -438,21 +439,23 @@ P0 Lock v1 content and interaction contract
 
 ### P0 — Lock the v1 product contract
 
+Status: open; this is a prerequisite to resuming T2. Existing reader enablement is retained, but upstream text provenance and terms remain unresolved.
+
 Outcome: implementation teams have one unambiguous three-screen product to build.
 
 Tasks:
 
 - [ ] Confirm the bundled Quran text edition, source, revision, checksum, license and display name.
-- [ ] Confirm the initial supported riwayah/text compatibility rule.
-- [ ] Verify the featured-reciter names and preferred editions against live provider data without guessing IDs.
-- [ ] Approve canonical English and Arabic terminology for reciter, riwayah, style, surah, ayah, Makki and Madani.
-- [ ] Approve the v1 labels “Featured”, “Verse Sync”, “Full Audio”, “Unavailable” and offline states.
-- [ ] Confirm that untimed audio remains fully playable with no highlighted ayah.
-- [ ] Confirm that incompatible text editions are clearly audio-only.
-- [ ] Confirm reflowing Unicode text as the only v1 Quran renderer.
-- [ ] Select and license the bundled Quran font.
-- [ ] Remove favorite, shuffle, repeat and other later-feature controls from the approved v1 screen specification.
-- [ ] Define compact, expanded and desktop arrangements for the same three screens using native platform components.
+- [x] Define the initial rule: bundled text is Hafs only (`rewaya_id = 1`); unknown and other provider riwayat stay audio-only.
+- [x] Verify the featured-reciter names and preferred editions against live provider data without guessing IDs (2026-09-15; mapping below).
+- [x] Define canonical English and Arabic terminology below.
+- [x] Define the v1 labels and offline states below.
+- [x] Confirm that untimed audio remains fully playable with no highlighted ayah.
+- [x] Confirm that incompatible text editions are clearly audio-only.
+- [x] Confirm reflowing Unicode text as the only v1 Quran renderer.
+- [x] Select Amiri Quran, already named by the reader theme, under the upstream SIL Open Font License 1.1. T2 must pin the font bytes, include the notice, register the font and verify rendering.
+- [x] Exclude favorite, shuffle, repeat and other later-feature controls from the v1 screen specification.
+- [x] Define compact, expanded and desktop arrangements in the canonical screens and platform expression checklist.
 
 Acceptance:
 
@@ -460,6 +463,48 @@ Acceptance:
 - Every v1 control maps to a real v1 behavior.
 - Each screen has approved content, loading, empty, offline, unavailable and error states.
 - No later feature is needed to complete the primary journey.
+
+#### Terminology and state contract
+
+| English | Arabic |
+|---|---|
+| Reciter | القارئ |
+| Riwayah | الرواية |
+| Recitation style | أسلوب التلاوة |
+| Surah / Ayah | السورة / الآية |
+| Makki / Madani | مكية / مدنية |
+| Featured | مميز |
+| Verse Sync | مزامنة الآيات |
+| Full Audio | تلاوة كاملة |
+| Audio Only | صوت فقط |
+| Unavailable | غير متاح |
+| Not Downloaded | غير منزّل |
+| Downloading | جارٍ التنزيل |
+| Downloaded | تم التنزيل |
+| Download Failed / Retry | تعذّر التنزيل / إعادة المحاولة |
+
+A successful empty list is an empty state, not a connection failure. A failed request presents the shared safe message and retry eligibility. Compatible bundled text remains readable without timing; incompatible riwayat show Audio Only. Offline playback requires a locally verified file, with missing/partial/corrupt files removed from ready state. Compact layouts use native stacked destinations and a persistent compact player; expanded/desktop layouts use native chapter panes, reader and persistent player as defined above.
+
+#### Confirmed content inputs
+
+The featured IDs below were checked against the [English catalog](https://www.mp3quran.net/api/v3/reciters?language=eng) and its Arabic counterpart on 2026-09-15. Keep the editorial names in the seed; live provider transliterations may differ.
+
+| Reciter | Reciter ID | Preferred edition |
+|---|---:|---:|
+| Mishary Rashid Alafasy | 123 | 123 |
+| Abdur-Rahman As-Sudais | 54 | 54 |
+| Saud Ash-Shuraym | 31 | 31 |
+| Mahmoud Khalil Al-Husary | 118 | 118 |
+| Mohamed Siddiq Al-Minshawi | 112 | 112 |
+| Abdul Basit Abdul Samad | 51 | 51 (Mujawwad; 53 is Murattal) |
+| Saad Al-Ghamdi | 30 | 30 |
+| Ali Al-Huthaify | 74 | 74 |
+| Maher Al Muaiqly | 102 | 102 |
+| Yasser Al-Dosari | 92 | 92 |
+
+Font: [Amiri Quran upstream](https://github.com/aliftype/amiri), [SIL OFL 1.1 notice](https://github.com/aliftype/amiri/blob/main/OFL.txt). Font selection/license is established; binary bundling and visual verification remain T2 work.
+
+The existing text's JSON and compiled verses match exactly, but its original upstream download/license is still required. Do not replace this missing evidence with a completion checkbox.
 
 Technical dependency: T0 and the content portion of T1.
 

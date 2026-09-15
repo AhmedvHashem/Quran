@@ -6,7 +6,7 @@ struct ReciterGridView: View {
     @StateObject private var viewModel: RecitersViewModel
     @EnvironmentObject private var router: AppRouter
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 20), count: 3)
+    private let columns = [GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 20)]
 
     init(library: QuranLibrary) {
         _viewModel = StateObject(wrappedValue: RecitersViewModel(library: library))
@@ -39,13 +39,25 @@ struct ReciterGridView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.reciters.isEmpty {
-            VStack {
-                if let error = viewModel.errorMessage {
-                    Text(error).font(.system(size: 13)).foregroundStyle(.red)
-                } else {
-                    ProgressView()
-                }
+        if viewModel.isLoading && viewModel.reciters.isEmpty {
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("Loading reciters").font(.body)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = viewModel.errorMessage, viewModel.reciters.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: "wifi.exclamationmark").font(.title)
+                Text("Unable to load reciters").font(.headline)
+                Text(error).font(.body).foregroundStyle(Theme.labelSecondary)
+                Button("Retry") { Task { await viewModel.load() } }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.reciters.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: "person.2.slash").font(.title)
+                Text("No reciters available").font(.headline)
+                Button("Retry") { Task { await viewModel.load() } }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -71,38 +83,42 @@ private struct ReciterCard: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            Artwork(size: 52, iconSize: 24)
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                Artwork(size: 52, iconSize: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(reciter.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isHovered ? .white : .primary)
-                Text("Browse riwayat & styles")
-                    .font(.system(size: 11))
-                    .foregroundStyle(isHovered ? Color.white.opacity(0.8) : Theme.labelSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(reciter.name)
+                        .font(.headline)
+                        .foregroundStyle(isHovered ? .white : .primary)
+                    Text("Browse riwayat & styles")
+                        .font(.caption)
+                        .foregroundStyle(isHovered ? Color.white.opacity(0.8) : Theme.labelSecondary)
+                }
+                .lineLimit(2)
+
+                Spacer(minLength: 8)
+
+                Text(reciter.arabicName)
+                    .font(Theme.arabic(15))
+                    .foregroundStyle(isHovered ? Color.white.opacity(0.95) : Color.black.opacity(0.7))
+                    .lineLimit(1)
             }
-            .lineLimit(2)
-
-            Spacer(minLength: 8)
-
-            Text(reciter.arabicName)
-                .font(Theme.arabic(15))
-                .foregroundStyle(isHovered ? Color.white.opacity(0.95) : Color.black.opacity(0.7))
-                .lineLimit(1)
+            .padding(.horizontal, 14)
+            .frame(height: 80)
+            .surface(
+                isHovered ? .tinted(Theme.accent) : .interactive,
+                in: .rect(cornerRadius: 12),
+                fallback: isHovered ? Theme.accent : Theme.cardSurface
+            )
+            .contentShape(.rect)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 80)
-        .surface(
-            isHovered ? .tinted(Theme.accent) : .interactive,
-            in: .rect(cornerRadius: 12),
-            fallback: isHovered ? Theme.accent : Theme.cardSurface
-        )
-        .contentShape(.rect)
+        .buttonStyle(.plain)
         // The design's blue card is the selected state; on a pointer platform
         // that reads as hover, and nothing is selected before you pick one.
         .onHover { isHovered = $0 }
-        .onTapGesture(perform: onSelect)
+        .accessibilityLabel("\(reciter.name), \(reciter.arabicName)")
+        .accessibilityHint("Show riwayat and recording styles")
     }
 }
 

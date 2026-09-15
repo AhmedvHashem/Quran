@@ -16,6 +16,7 @@ final class ReciterDetailViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let library: QuranLibrary
+    private var loadGeneration = 0
 
     init(library: QuranLibrary, reciter: Reciter) {
         self.library = library
@@ -24,10 +25,15 @@ final class ReciterDetailViewModel: ObservableObject {
 
     func load() async {
         guard editions.isEmpty else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
-        defer { isLoading = false }
+        errorMessage = nil
         do {
-            let fetched = try await library.editions(reciterId: reciter.id)
+            let result = try await library.editions(reciterId: reciter.id)
+            guard generation == loadGeneration else { return }
+            errorMessage = result.failure?.message
+            let fetched = result.editions
             editions = fetched
 
             // Group by riwayah name
@@ -61,7 +67,10 @@ final class ReciterDetailViewModel: ObservableObject {
                 }
                 return RiwayahGroup(riwayah: item.riwayah, editions: sortedEditions)
             }
+            isLoading = false
         } catch {
+            guard generation == loadGeneration else { return }
+            isLoading = false
             errorMessage = error.localizedDescription
         }
     }

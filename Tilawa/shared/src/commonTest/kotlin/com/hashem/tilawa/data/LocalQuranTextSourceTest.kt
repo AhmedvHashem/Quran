@@ -4,6 +4,7 @@ import com.hashem.tilawa.data.local.LocalQuranTextSource
 import com.hashem.tilawa.domain.model.RevelationPlace
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LocalQuranTextSourceTest {
@@ -51,6 +52,13 @@ class LocalQuranTextSourceTest {
     }
 
     @Test
+    fun `bundled Hafs text is enabled and checksum pinned`() {
+        assertTrue(source.manifest.isVerified)
+        assertEquals(setOf(1), source.manifest.supportedRiwayahIds)
+        assertEquals(64, source.manifest.checksumSha256.length)
+    }
+
+    @Test
     fun `parses from custom JSON payload correctly`() {
         val json = """
             {
@@ -74,6 +82,7 @@ class LocalQuranTextSourceTest {
         """.trimIndent()
 
         val customSource = LocalQuranTextSource.fromJson(json)
+        assertFalse(customSource.manifest.isVerified)
         assertEquals(1, customSource.chapters().size)
         assertEquals(2, customSource.verses(1).size)
         assertEquals("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", customSource.verses(1).first().text)

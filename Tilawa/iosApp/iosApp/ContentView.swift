@@ -24,9 +24,9 @@ struct ContentView: View {
     @MainActor
     private func loadReciters() async {
         do {
-            let reciters = try await library.reciters()
+            let result = try await library.reciters()
             guard !Task.isCancelled else { return }
-            status = "\(reciters.count) reciters available"
+            status = result.failure?.message ?? "\(result.reciters.count) reciters available"
         } catch is CancellationError {
             return
         } catch {

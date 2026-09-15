@@ -95,6 +95,13 @@ struct ReciterDetailView: View {
                 Button("Retry") { Task { await viewModel.load() } }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.editions.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "waveform.slash").font(.title)
+                Text("No recordings available").font(.headline)
+                Button("Retry") { Task { await viewModel.load() } }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
@@ -140,78 +147,85 @@ private struct EditionCard: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(edition.style)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(isHovered ? .white : .primary)
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(edition.style)
+                            .font(.headline)
+                            .foregroundStyle(isHovered ? .white : .primary)
 
-                    Text("\(edition.availableSurahs.count) Surahs available")
-                        .font(.system(size: 12))
-                        .foregroundStyle(isHovered ? Color.white.opacity(0.8) : Theme.labelSecondary)
+                        Text("\(edition.availableSurahs.count) Surahs available")
+                            .font(.caption)
+                            .foregroundStyle(isHovered ? Color.white.opacity(0.8) : Theme.labelSecondary)
+                    }
+
+                    Spacer()
+
+                    if edition.isFeatured {
+                        HStack(spacing: 3) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10))
+                            Text("Featured")
+                                .font(.caption2.bold())
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(isHovered ? Color.white.opacity(0.25) : Theme.accent.opacity(0.12))
+                        .foregroundStyle(isHovered ? .white : Theme.accent)
+                        .clipShape(Capsule())
+                    }
                 }
 
-                Spacer()
-
-                if edition.isFeatured {
-                    HStack(spacing: 3) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                        Text("Featured")
-                            .font(.system(size: 10, weight: .bold))
+                HStack(spacing: 8) {
+                    if edition.hasTiming {
+                        EditionBadge(symbol: "waveform", title: "Verse Sync", color: .green, isHovered: isHovered)
+                    } else {
+                        EditionBadge(symbol: "play.circle", title: "Full Audio", color: .gray, isHovered: isHovered)
                     }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(isHovered ? Color.white.opacity(0.25) : Theme.accent.opacity(0.12))
-                    .foregroundStyle(isHovered ? .white : Theme.accent)
-                    .clipShape(Capsule())
+
+                    if edition.riwayah.id != 1 {
+                        EditionBadge(symbol: "speaker.wave.2", title: "Audio Only", color: .orange, isHovered: isHovered)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(isHovered ? .white : Theme.accent)
                 }
             }
-
-            HStack(spacing: 8) {
-                if edition.hasTiming {
-                    HStack(spacing: 4) {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 10))
-                        Text("Verse Sync")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(isHovered ? Color.white.opacity(0.2) : Color.green.opacity(0.12))
-                    .foregroundStyle(isHovered ? .white : Color.green.opacity(0.9))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 10))
-                        Text("Full Audio")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(isHovered ? Color.white.opacity(0.2) : Color.gray.opacity(0.1))
-                    .foregroundStyle(isHovered ? .white : Theme.labelSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-
-                Spacer()
-
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(isHovered ? .white : Theme.accent)
-            }
+            .padding(14)
+            .frame(minHeight: 90)
+            .surface(
+                isHovered ? .tinted(Theme.accent) : .interactive,
+                in: .rect(cornerRadius: 12),
+                fallback: isHovered ? Theme.accent : Theme.cardSurface
+            )
+            .contentShape(.rect)
         }
-        .padding(14)
-        .frame(minHeight: 90)
-        .surface(
-            isHovered ? .tinted(Theme.accent) : .interactive,
-            in: .rect(cornerRadius: 12),
-            fallback: isHovered ? Theme.accent : Theme.cardSurface
-        )
-        .contentShape(.rect)
+        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .onTapGesture(perform: onSelect)
+        .accessibilityLabel("\(edition.riwayah.name), \(edition.style), \(edition.availableSurahs.count) surahs")
+        .accessibilityHint("Open reader and player")
+    }
+}
+
+private struct EditionBadge: View {
+    let symbol: String
+    let title: String
+    let color: Color
+    let isHovered: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 10))
+            Text(title).font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(isHovered ? Color.white.opacity(0.2) : color.opacity(0.12))
+        .foregroundStyle(isHovered ? .white : color)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

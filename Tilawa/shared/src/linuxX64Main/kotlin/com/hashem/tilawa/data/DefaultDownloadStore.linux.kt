@@ -32,6 +32,8 @@ private class LinuxFileDownloadStore(
         .orEmpty()
         .associateByTo(mutableMapOf()) { it.editionId to it.chapterId }
 
+    override fun all(): List<DownloadRecord> = records.values.toList()
+
     override fun record(editionId: Int, chapterId: Int): DownloadRecord =
         records[editionId to chapterId] ?: emptyRecord(editionId, chapterId)
 

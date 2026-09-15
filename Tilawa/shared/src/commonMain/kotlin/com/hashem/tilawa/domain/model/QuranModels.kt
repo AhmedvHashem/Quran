@@ -100,7 +100,14 @@ data class DownloadRecord(
     val failureMessage: String? = null,
 )
 
-internal enum class QuranErrorCode { NETWORK, EDITION_NOT_FOUND, SURAH_UNAVAILABLE }
+enum class QuranErrorCode { NETWORK, EDITION_NOT_FOUND, SURAH_UNAVAILABLE }
+
+/** Expected failures cross every native bridge as values; cancellation still throws. */
+data class QuranFailure(val code: QuranErrorCode, val retryable: Boolean, val message: String)
+
+data class RecitersResult(val reciters: List<Reciter>, val failure: QuranFailure?)
+data class EditionsResult(val editions: List<RecitationEdition>, val failure: QuranFailure?)
+data class SurahResult(val track: PlaybackTrack?, val failure: QuranFailure?)
 
 internal class QuranException(
     val code: QuranErrorCode,

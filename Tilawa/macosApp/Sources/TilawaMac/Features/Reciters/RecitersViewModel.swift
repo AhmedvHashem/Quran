@@ -8,16 +8,25 @@ final class RecitersViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let library: QuranLibrary
+    private var loadGeneration = 0
 
     init(library: QuranLibrary) { self.library = library }
 
     func load() async {
         guard reciters.isEmpty else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
-        defer { isLoading = false }
+        errorMessage = nil
         do {
-            reciters = try await library.reciters()
+            let loaded = try await library.reciters()
+            guard generation == loadGeneration else { return }
+            reciters = loaded.reciters
+            errorMessage = loaded.failure?.message
+            isLoading = false
         } catch {
+            guard generation == loadGeneration else { return }
+            isLoading = false
             errorMessage = error.localizedDescription
         }
     }

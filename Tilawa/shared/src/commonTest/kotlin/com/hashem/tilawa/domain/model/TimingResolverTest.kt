@@ -28,4 +28,12 @@ class TimingResolverTest {
         assertNull(listOf(VerseTiming(1, 0, 1_000)).validatedTiming(2))
         assertNull(listOf(VerseTiming(1, 0, 2_000), VerseTiming(2, 1_000, 3_000)).validatedTiming(2))
     }
+    @Test
+    fun `unlabeled malformed or overlapping segments cannot create a false highlight`() {
+        assertNull(verseNumberAt(50, listOf(VerseTiming(0, 0, 100))))
+        assertNull(listOf(VerseTiming(0, 50, 150), VerseTiming(1, 100, 200)).validatedTiming(1))
+        assertNull(listOf(VerseTiming(-1, 0, 100), VerseTiming(1, 100, 200)).validatedTiming(1))
+        assertEquals(timing, timing.validatedTiming(2))
+    }
+
 }

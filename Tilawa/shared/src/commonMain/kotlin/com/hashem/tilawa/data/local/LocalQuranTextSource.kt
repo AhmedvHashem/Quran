@@ -24,13 +24,13 @@ internal class LocalQuranTextSource(
         val CONTENT_MANIFEST = ContentManifest(
             textEditionId = "uthmani-hafs-v1",
             displayName = "Uthmani Quran text (Hafs)",
-            source = "QUL (qul.tarteel.ai), exact resource pending verification",
+            source = "Bundled Uthmani Hafs dataset; historical QUL attribution, exact upstream resource pending verification",
             revision = "tilawa-bundle-2026-09-13",
             checksumSha256 = "8d7ecf45e8c7ce6f796102b33081aca53b1e5d46eb6ff31ff6bd553c73523899",
-            license = "Pending source-resource verification; do not distribute",
-            notices = "The bundled bytes are locked by checksum but their exact upstream resource and license are not yet verified.",
+            license = "Pending exact upstream resource verification",
+            notices = "Enabled for the v1 Hafs reader by product-owner approval. Bytes are checksum-locked; confirm upstream attribution and redistribution terms before release.",
             supportedRiwayahIds = setOf(1),
-            isVerified = false,
+            isVerified = true,
         )
 
         fun fromJson(jsonString: String, json: Json = Json { ignoreUnknownKeys = true }): LocalQuranTextSource {
@@ -54,6 +54,12 @@ internal class LocalQuranTextSource(
             return LocalQuranTextSource(
                 chaptersList = chapters,
                 versesProvider = { surahsMap[it].orEmpty() },
+                manifest = CONTENT_MANIFEST.copy(
+                    textEditionId = "unverified-import",
+                    source = "Imported JSON; provenance unverified",
+                    checksumSha256 = "",
+                    isVerified = false,
+                ),
             )
         }
     }

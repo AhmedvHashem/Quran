@@ -1,6 +1,7 @@
 name: T0 interop
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
 
@@ -11,14 +12,19 @@ defaults:
 jobs:
   apple:
     runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
+      - run: python3 scripts/check_content.py
       - run: ./gradlew :shared:allTests :shared:assembleSharedReleaseXCFramework :androidApp:assembleDebug
       - run: swift build
+        working-directory: Tilawa/macosApp
+      - run: swift run InteropSmoke
         working-directory: Tilawa/macosApp
       - run: xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
 
@@ -35,6 +41,7 @@ jobs:
           dotnet-version: 8.0.x
       - run: .\gradlew.bat :shared:mingwX64Test :shared:packNuget
       - run: dotnet build windowsApp/TilawaWindows.csproj
+      - run: dotnet run --project interopSmoke/InteropSmoke.csproj -r win-x64
 
   linux:
     runs-on: ubuntu-24.04
@@ -49,3 +56,4 @@ jobs:
           dotnet-version: 8.0.x
       - run: ./gradlew :shared:linuxX64Test :shared:packNuget
       - run: dotnet build linuxApp/TilawaLinux.csproj
+      - run: dotnet run --project interopSmoke/InteropSmoke.csproj -r linux-x64

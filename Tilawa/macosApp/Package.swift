@@ -12,6 +12,10 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
+            name: "InteropSmoke",
+            dependencies: ["Shared"],
+            path: "Sources/InteropSmoke"),
+        .executableTarget(
             name: "TilawaMac",
             dependencies: ["Shared"],
             path: "Sources/TilawaMac"),

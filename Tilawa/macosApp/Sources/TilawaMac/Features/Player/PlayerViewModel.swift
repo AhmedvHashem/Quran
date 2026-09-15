@@ -3,45 +3,50 @@ import CryptoKit
 import Shared
 import SwiftUI
 
-/// Owns the surah being read, the gapless track playback, and verse synchronisation.
+/// Owns reader state; playback and downloads are app-owned services.
 @MainActor
 final class PlayerViewModel: ObservableObject {
     let reciter: Reciter
     let edition: RecitationEdition
-    let player = VersePlayer()
+    let player: PlaybackController
+    let downloads: DownloadController
 
     @Published private(set) var chapters: [Chapter] = []
     @Published private(set) var chapter: Chapter?
     @Published private(set) var verses: [Verse] = []
     @Published private(set) var timing: [VerseTiming]?
-    @Published private(set) var trackUrl: String?
     @Published private(set) var verseIndex: Int?
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
-
-    @Published var repeatsSurah = false
-    @Published var isShuffling = false
-    @Published var isFavourite = false
+    @Published private(set) var textAvailability: TextAvailability?
 
     private let library: QuranLibrary
     private var playbackTrack: PlaybackTrack?
-    private var playerChanges: AnyCancellable?
+    private var elapsedChanges: AnyCancellable?
+    private var loadGeneration = 0
 
-    init(library: QuranLibrary, reciter: Reciter, edition: RecitationEdition) {
+    init(
+        library: QuranLibrary,
+        reciter: Reciter,
+        edition: RecitationEdition,
+        player: PlaybackController,
+        downloads: DownloadController
+    ) {
         self.library = library
         self.reciter = reciter
         self.edition = edition
+        self.player = player
+        self.downloads = downloads
 
-        playerChanges = player.objectWillChange.sink { [weak self] in
-            guard let self else { return }
-            self.updateVerseIndex()
+        elapsedChanges = player.$elapsed.sink { [weak self] elapsed in
+            self?.updateVerseIndex(at: elapsed)
         }
-        player.onFinish = { [weak self] in self?.handleFinish() }
+        player.onFinish = { [weak self] in self?.nextChapter() }
+        player.onNext = { [weak self] in self?.next() }
+        player.onPrevious = { [weak self] in self?.previous() }
     }
 
-    var hasTiming: Bool {
-        edition.hasTiming && timing != nil && !(timing?.isEmpty ?? true)
-    }
+    var hasTiming: Bool { !(timing?.isEmpty ?? true) }
 
     var verse: Verse? {
         guard let index = verseIndex, verses.indices.contains(index) else { return nil }
@@ -57,46 +62,89 @@ final class PlayerViewModel: ObservableObject {
         player.duration > 0 ? min(max(player.elapsed / player.duration, 0), 1) : 0
     }
 
+    var availableChapters: [Chapter] { chapters.filter(isAvailable) }
+
+    func isAvailable(_ chapter: Chapter) -> Bool {
+        edition.availableSurahs.contains(KotlinInt(int: chapter.id))
+    }
+
     // MARK: - Loading
 
     func start() async {
         guard chapters.isEmpty else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
+        errorMessage = nil
         do {
-            chapters = try await library.chapters()
+            let loaded = try await library.chapters()
+            guard generation == loadGeneration else { return }
+            chapters = loaded
+            reconcileDownloads()
+            isLoading = false
+            if let first = availableChapters.first {
+                await open(first)
+            } else {
+                errorMessage = "This recording has no available surahs."
+            }
         } catch {
+            guard generation == loadGeneration else { return }
+            isLoading = false
             errorMessage = error.localizedDescription
-        }
-        isLoading = false
-
-        // Open first chapter available in this edition
-        if let first = chapters.first(where: { edition.availableSurahs.contains(KotlinInt(int: $0.id)) }) ?? chapters.first {
-            await open(first)
         }
     }
 
     func open(_ chapter: Chapter) async {
+        guard isAvailable(chapter) else {
+            errorMessage = "\(chapter.name) is unavailable in this recording."
+            return
+        }
+
+        loadGeneration += 1
+        let generation = loadGeneration
         player.clear()
         self.chapter = chapter
-        self.verses = []
-        self.timing = nil
-        self.verseIndex = nil
-        self.errorMessage = nil
-        self.playbackTrack = nil
+        verses = []
+        timing = nil
+        verseIndex = nil
+        errorMessage = nil
+        textAvailability = nil
+        playbackTrack = nil
         isLoading = true
-        defer { isLoading = false }
+
         do {
-            let track = try await library.surah(chapterId: chapter.id, editionId: edition.id)
-            self.playbackTrack = track
-            self.verses = track.verses
-            self.timing = track.timing
-            self.trackUrl = track.trackUrl
-            if let url = URL(string: track.trackUrl) {
-                player.load(url)
+            let result = try await library.surah(chapterId: chapter.id, editionId: edition.id)
+            guard generation == loadGeneration else { return }
+            guard let track = result.track else {
+                errorMessage = result.failure?.message
+                isLoading = false
+                return
             }
+            playbackTrack = track
+            verses = track.verses
+            timing = track.timing
+            textAvailability = track.textAvailability
+            guard let url = URL(string: track.trackUrl) else {
+                throw URLError(.badURL)
+            }
+            player.load(
+                url,
+                metadata: PlaybackMetadata(
+                    title: chapter.name,
+                    artist: reciter.name,
+                    album: "\(edition.riwayah.name) · \(edition.style)"
+                )
+            )
+            isLoading = false
         } catch {
+            guard generation == loadGeneration else { return }
+            isLoading = false
             errorMessage = error.localizedDescription
         }
+    }
+
+    func retry() async {
+        if let chapter { await open(chapter) } else { await start() }
     }
 
     // MARK: - Downloads
@@ -105,57 +153,104 @@ final class PlayerViewModel: ObservableObject {
         library.download(editionId: edition.id, chapterId: chapter.id).status
     }
 
-    func downloadCurrentChapter() async {
-        guard let current = chapter else { return }
-        await downloadChapter(current)
+    func downloadProgress(for chapter: Chapter) -> Double? {
+        downloads.progress(for: DownloadKey(editionId: edition.id, chapterId: chapter.id))
     }
 
-    func downloadChapter(_ chapter: Chapter) async {
-        guard chapter.id == self.chapter?.id, let playbackTrack else { return }
+    func toggleCurrentDownload() async {
+        guard let chapter else { return }
+        if downloadStatus(for: chapter) == .downloaded {
+            removeDownload(chapter)
+        } else {
+            await downloadChapter(chapter)
+        }
+    }
+
+    private func downloadChapter(_ chapter: Chapter) async {
+        guard chapter.id == self.chapter?.id, let playbackTrack,
+              let remoteURL = URL(string: playbackTrack.trackUrl), !remoteURL.isFileURL else { return }
+
+        let files = FileManager.default
+        let directory = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Tilawa/downloads", isDirectory: true)
+        let finalFile = directory.appendingPathComponent("edition_\(edition.id)_surah_\(chapter.id).mp3")
+        let stagingFile = finalFile.appendingPathExtension("part")
+        let key = DownloadKey(editionId: edition.id, chapterId: chapter.id)
+
         library.beginDownload(editionId: edition.id, chapterId: chapter.id)
         objectWillChange.send()
-
         do {
-            let padded = String(format: "%03d", chapter.id)
-            let server = edition.serverBaseUrl.hasSuffix("/") ? edition.serverBaseUrl : "\(edition.serverBaseUrl)/"
-            guard let remoteUrl = URL(string: "\(server)\(padded).mp3") else {
-                library.failDownload(editionId: edition.id, chapterId: chapter.id, message: "Invalid audio URL")
-                objectWillChange.send()
-                return
+            try files.createDirectory(at: directory, withIntermediateDirectories: true)
+            let result = try await downloads.download(from: remoteURL, to: stagingFile, key: key)
+            guard let response = result.response as? HTTPURLResponse,
+                  (200...299).contains(response.statusCode),
+                  response.mimeType?.lowercased() != "text/html" else {
+                throw URLError(.badServerResponse)
             }
 
-            let (tempUrl, response) = try await URLSession.shared.download(from: remoteUrl)
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                library.failDownload(editionId: edition.id, chapterId: chapter.id, message: "Download failed")
-                objectWillChange.send()
-                return
-            }
-
-            let fileManager = FileManager.default
-            let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let downloadsDir = appSupport.appendingPathComponent("Tilawa/downloads", isDirectory: true)
-            try fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
-
-            let destFile = downloadsDir.appendingPathComponent("edition_\(edition.id)_surah_\(chapter.id).mp3")
-            if fileManager.fileExists(atPath: destFile.path) {
-                try fileManager.removeItem(at: destFile)
-            }
-            try fileManager.moveItem(at: tempUrl, to: destFile)
-
-            let data = try Data(contentsOf: destFile, options: .mappedIfSafe)
+            let data = try Data(contentsOf: result.file, options: .mappedIfSafe)
+            guard !data.isEmpty else { throw URLError(.zeroByteResource) }
             let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+
+            if files.fileExists(atPath: finalFile.path) {
+                _ = try files.replaceItemAt(finalFile, withItemAt: result.file)
+            } else {
+                try files.moveItem(at: result.file, to: finalFile)
+            }
             library.completeDownload(
                 chapterId: chapter.id,
                 track: playbackTrack,
-                localPath: destFile.absoluteString,
+                localPath: finalFile.absoluteString,
                 checksumSha256: checksum,
                 byteCount: Int64(data.count)
             )
             objectWillChange.send()
         } catch {
+            try? files.removeItem(at: stagingFile)
             library.failDownload(editionId: edition.id, chapterId: chapter.id, message: error.localizedDescription)
             objectWillChange.send()
         }
+    }
+
+    private func removeDownload(_ chapter: Chapter) {
+        let record = library.download(editionId: edition.id, chapterId: chapter.id)
+        if let path = record.localPath, let url = URL(string: path), url.isFileURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        library.removeDownload(editionId: edition.id, chapterId: chapter.id)
+        objectWillChange.send()
+    }
+
+    private func reconcileDownloads() {
+        // ponytail: synchronous mapped-file hashing is simplest for v1; move it off-main if a large library profiles poorly.
+        let files = FileManager.default
+        for chapter in availableChapters {
+            let record = library.download(editionId: edition.id, chapterId: chapter.id)
+            if record.status == .downloading {
+                library.failDownload(
+                    editionId: edition.id,
+                    chapterId: chapter.id,
+                    message: "The previous download was interrupted. Retry to continue."
+                )
+                continue
+            }
+            guard record.status == .downloaded,
+                  let path = record.localPath,
+                  let url = URL(string: path), url.isFileURL else { continue }
+            let data = try? Data(contentsOf: url, options: .mappedIfSafe)
+            let checksum = data.map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+            let reconciled = library.reconcileDownload(
+                editionId: edition.id,
+                chapterId: chapter.id,
+                fileExists: data != nil,
+                actualChecksumSha256: checksum,
+                actualByteCount: data.map { KotlinLong(longLong: Int64($0.count)) }
+            )
+            if reconciled.status != .downloaded, files.fileExists(atPath: url.path) {
+                try? files.removeItem(at: url)
+            }
+        }
+        objectWillChange.send()
     }
 
     // MARK: - Transport
@@ -163,27 +258,23 @@ final class PlayerViewModel: ObservableObject {
     func togglePlay() { player.toggle() }
 
     func next() {
-        if hasTiming, let index = verseIndex, let timings = timing, index + 1 < timings.count {
-            let nextTiming = timings[index + 1]
-            player.seek(to: Double(nextTiming.startMs) / 1000.0)
+        let elapsedMs = Int64(player.elapsed * 1000)
+        if let next = timing?.first(where: { $0.startMs > elapsedMs + 50 }) {
+            player.seek(to: Double(next.startMs) / 1000)
         } else {
             nextChapter()
         }
     }
 
     func previous() {
-        if player.elapsed > 2.0 {
-            if hasTiming, let index = verseIndex, let timings = timing, index < timings.count {
-                player.seek(to: Double(timings[index].startMs) / 1000.0)
-            } else {
-                player.restart()
-            }
+        let elapsedMs = Int64(player.elapsed * 1000)
+        if player.elapsed > 2,
+           let current = timing?.last(where: { $0.startMs <= elapsedMs }) {
+            player.seek(to: Double(current.startMs) / 1000)
+        } else if let previous = adjacentChapter(offset: -1) {
+            Task { await open(previous) }
         } else {
-            if hasTiming, let index = verseIndex, let timings = timing, index > 0 {
-                player.seek(to: Double(timings[index - 1].startMs) / 1000.0)
-            } else {
-                previousChapter()
-            }
+            player.restart()
         }
     }
 
@@ -192,66 +283,27 @@ final class PlayerViewModel: ObservableObject {
         player.seek(to: fraction * player.duration)
     }
 
-    func seekToVerse(number: Int) {
-        guard let timings = timing, let match = timings.first(where: { $0.verseNumber == number }) else { return }
-        player.seek(to: Double(match.startMs) / 1000.0)
-    }
-
-    private func updateVerseIndex() {
-        guard hasTiming, let timingList = timing, !timingList.isEmpty else {
-            if verseIndex != nil {
-                verseIndex = nil
-            }
+    private func updateVerseIndex(at elapsed: Double) {
+        guard let timing, !timing.isEmpty,
+              let number = library.verseAt(positionMs: Int64(elapsed * 1000), timing: timing)?.int32Value else {
+            verseIndex = nil
             return
         }
-        let elapsedMs = Int64(player.elapsed * 1000)
-        let newIndex: Int?
-        if let match = timingList.first(where: { elapsedMs >= $0.startMs && elapsedMs < $0.endMs }) {
-            let direct = Int(match.verseNumber - 1)
-            if verses.indices.contains(direct) && verses[direct].number == match.verseNumber {
-                newIndex = direct
-            } else {
-                let index = verses.firstIndex(where: { $0.number == match.verseNumber }) ?? direct
-                newIndex = verses.indices.contains(index) ? index : nil
-            }
-        } else if let first = timingList.first, elapsedMs < first.startMs {
-            newIndex = 0
-        } else if let last = timingList.last, elapsedMs >= last.endMs {
-            newIndex = verses.count - 1
-        } else {
-            newIndex = nil
-        }
-        if verseIndex != newIndex {
-            verseIndex = newIndex
-        }
-    }
-
-    private func handleFinish() {
-        if repeatsSurah {
-            player.restart()
-            player.play()
-        } else {
-            nextChapter()
-        }
+        verseIndex = verses.firstIndex(where: { $0.number == number })
     }
 
     private func nextChapter() {
-        guard let current = chapter, let currentIndex = chapters.firstIndex(of: current) else { return }
-        let nextIndex = currentIndex + 1
-        if chapters.indices.contains(nextIndex) {
-            Task { await open(chapters[nextIndex]) }
-        } else {
+        guard let next = adjacentChapter(offset: 1) else {
             player.pause()
+            return
         }
+        Task { await open(next) }
     }
 
-    private func previousChapter() {
-        guard let current = chapter, let currentIndex = chapters.firstIndex(of: current) else { return }
-        let prevIndex = currentIndex - 1
-        if chapters.indices.contains(prevIndex) {
-            Task { await open(chapters[prevIndex]) }
-        } else {
-            player.restart()
-        }
+    private func adjacentChapter(offset: Int) -> Chapter? {
+        guard let current = chapter,
+              let index = availableChapters.firstIndex(of: current) else { return nil }
+        let target = index + offset
+        return availableChapters.indices.contains(target) ? availableChapters[target] : nil
     }
 }

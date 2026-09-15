@@ -3,11 +3,13 @@ import SwiftUI
 
 struct PlayerBar: View {
     @ObservedObject var viewModel: PlayerViewModel
-    @ObservedObject private var player: VersePlayer
+    @ObservedObject private var player: PlaybackController
+    @ObservedObject private var downloads: DownloadController
 
     init(viewModel: PlayerViewModel) {
         self.viewModel = viewModel
         self._player = ObservedObject(wrappedValue: viewModel.player)
+        self._downloads = ObservedObject(wrappedValue: viewModel.downloads)
     }
 
     var body: some View {
@@ -45,7 +47,7 @@ struct PlayerBar: View {
 
             if let current = viewModel.chapter {
                 let status = viewModel.downloadStatus(for: current)
-                Button(action: { Task { await viewModel.downloadCurrentChapter() } }) {
+                Button(action: { Task { await viewModel.toggleCurrentDownload() } }) {
                     Group {
                         switch status {
                         case .notDownloaded:
@@ -53,53 +55,62 @@ struct PlayerBar: View {
                                 .font(.system(size: 15))
                                 .foregroundStyle(Theme.labelSecondary)
                         case .downloading:
-                            ProgressView()
-                                .controlSize(.small)
+                            Group {
+                                if let progress = viewModel.downloadProgress(for: current) {
+                                    ProgressView(value: progress)
+                                } else {
+                                    ProgressView()
+                                }
+                            }
+                            .controlSize(.small)
+                            .frame(width: 18)
                         case .downloaded:
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 15))
                                 .foregroundStyle(Theme.accent)
-                        default:
-                            Image(systemName: "arrow.down.circle")
+                        case .failed:
+                            Image(systemName: "exclamationmark.arrow.circlepath")
                                 .font(.system(size: 15))
-                                .foregroundStyle(Theme.labelSecondary)
+                                .foregroundStyle(.red)
                         }
                     }
                     .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
-                .help(status == .downloaded ? "Downloaded for offline playback" : "Download surah")
+                .help(status == .downloaded ? "Remove offline download" : "Download surah for offline playback")
+                .accessibilityLabel(status == .downloaded ? "Remove offline download" : "Download surah")
             }
-
-            IconButton(
-                symbol: viewModel.isFavourite ? "heart.fill" : "heart",
-                tint: viewModel.isFavourite ? Theme.accent : nil
-            ) { viewModel.isFavourite.toggle() }
         }
     }
 
     private var transport: some View {
         SurfaceGroup(spacing: 14) {
             HStack(spacing: 12) {
-                IconButton(symbol: "shuffle", tint: viewModel.isShuffling ? Theme.accent : nil) {
-                    viewModel.isShuffling.toggle()
-                }
                 IconButton(symbol: "backward.end.fill", size: 15, action: viewModel.previous)
+                    .help("Previous verse or surah")
+                    .accessibilityLabel("Previous verse or surah")
 
                 Button(action: viewModel.togglePlay) {
-                    Image(systemName: viewModel.player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 17))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .surface(.tinted(Theme.accent), in: .circle, fallback: Theme.accent)
+                    ZStack {
+                        Image(systemName: viewModel.player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 17))
+                            .opacity(viewModel.player.state == .buffering ? 0 : 1)
+                        if viewModel.player.state == .buffering {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .surface(.tinted(Theme.accent), in: .circle, fallback: Theme.accent)
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.verses.isEmpty)
+                .help(viewModel.player.isPlaying ? "Pause" : "Play")
+                .accessibilityLabel(viewModel.player.isPlaying ? "Pause" : "Play")
 
                 IconButton(symbol: "forward.end.fill", size: 15, action: viewModel.next)
-                IconButton(symbol: "repeat", tint: viewModel.repeatsSurah ? Theme.accent : nil) {
-                    viewModel.repeatsSurah.toggle()
-                }
+                    .help("Next verse or surah")
+                    .accessibilityLabel("Next verse or surah")
             }
         }
     }
@@ -139,10 +150,10 @@ struct PlayerBar: View {
     private var trailing: some View {
         HStack(spacing: 10) {
             Spacer(minLength: 0)
-            if viewModel.hasTiming {
+            if viewModel.hasTiming, let verseIndex = viewModel.verseIndex {
                 HStack(spacing: 5) {
                     Image(systemName: "list.bullet").font(.system(size: 10))
-                    Text("Verse \( (viewModel.verseIndex ?? 0) + 1 ) / \(max(viewModel.verses.count, 1))")
+                    Text("Verse \(verseIndex + 1) / \(max(viewModel.verses.count, 1))")
                         .font(.system(size: 10, weight: .medium))
                 }
                 .foregroundStyle(Theme.accent)
@@ -167,6 +178,7 @@ struct PlayerBar: View {
             Slider(value: $viewModel.volume, in: 0...1)
                 .controlSize(.mini)
                 .frame(width: 80)
+                .accessibilityLabel("Volume")
         }
     }
 }

@@ -16,8 +16,17 @@ application.OnActivate += async (sender, _) =>
     await using var library = new QuranLibrary();
     try
     {
-        var reciters = await library.RecitersAsync(closed.Token);
-        status.Label_ = $"{reciters.Count} reciters available";
+        using var result = await library.RecitersAsync(closed.Token);
+        using var failure = result.Failure;
+        var reciters = result.Reciters;
+        try
+        {
+            status.Label_ = failure?.Message ?? $"{reciters.Count} reciters available";
+        }
+        finally
+        {
+            foreach (var reciter in reciters) reciter.Dispose();
+        }
     }
     catch (OperationCanceledException)
     {

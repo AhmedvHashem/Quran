@@ -1,6 +1,6 @@
 # Tilawa application stack
 
-Status: authoritative target architecture. Updated 2026-09-13.
+Status: authoritative target architecture. Updated 2026-09-15.
 
 This document is the only technical architecture source of truth for Tilawa. Product behavior and features are defined in [PRODUCT.md](../PRODUCT.md).
 
@@ -300,6 +300,8 @@ T0 Interop and toolchain proof
             └── T7 Parity and release validation
 ```
 
+**Current gate (2026-09-15): T2 is paused. Complete T0 acceptance, T1 acceptance and P0 before resuming it. Existing T2 changes are preserved, but their presence does not waive a prerequisite. A checked implementation task is not acceptance evidence.**
+
 T3–T6 may proceed independently after T2 locks the behavior. They are complete only when T7 verifies the same acceptance journey on every target.
 
 ### T0 — Prove the selected toolchain and interop
@@ -331,7 +333,16 @@ Acceptance:
 
 Stop condition: do not begin full Windows or Linux UI work until their generated bindings run on the real target OS.
 
-Status: implementation and local compilation are complete; T0 acceptance remains gated on the Windows and Linux CI lanes proving native loading, the reciter call, cancellation and disposal on their real target OS.
+Status: acceptance open. [Run 34787114717](https://github.com/AhmedvHashem/Quran/actions/runs/34787114717) compiled the Windows/Linux consumers, but did not run them; the Apple lane failed because the default Xcode 16 SDK lacks the Glass APIs. The workflow now pins installed Xcode 26.3 and runs explicit Apple/C# interop smoke programs. These workflow changes still need a green target-host run.
+
+Remaining T0 acceptance evidence:
+
+- [ ] Green Apple CI with Xcode 26.3, framework generation, Swift smoke and iOS compile.
+- [ ] Green Windows x64 runtime smoke: native load, nonempty live catalog, cancellation and deterministic disposal.
+- [ ] Green Linux x64 runtime smoke with the same checks.
+- [x] Reciter-call runtime evidence from Android and iOS: Pixel 10 emulator and iPhone 17 / iOS 26.2 both displayed “242 reciters available” on 2026-09-15. Android required the missing `INTERNET` permission to stop an OkHttp dispatcher crash.
+
+Local runtime command: `cd Tilawa/macosApp && swift run InteropSmoke`. C# command on each target OS: `dotnet run --project interopSmoke/InteropSmoke.csproj -r win-x64` or `-r linux-x64` from `Tilawa`. Neither a skipped native test nor a cross-compiled executable closes these gates.
 
 ### T1 — Stabilize the shared v1 contract
 
@@ -341,19 +352,24 @@ Tasks:
 
 - [x] Keep `QuranLibrary` as the single exported composition root.
 - [x] Export only reciters, editions, chapters, verses, playback-track data, timing resolution and download metadata required by v1.
-- [x] Add explicit recording identity: provider, edition, reciter, riwayah, style and recording revision.
-- [x] Add a bundled-content manifest containing text edition, source, revision, checksum, license and notices.
-- [x] Enforce text/audio/timing compatibility before producing a readable playback track.
+- [x] Add recording identity: provider, edition, reciter, riwayah, style and provider-folder identity.
+- [ ] Establish an immutable recording revision or checksum binding for timing; a URL is not proof that remote audio bytes have not changed.
+- [x] Add the bundled-content manifest and verify its checksum against both the JSON and all compiled verses.
+- [ ] Resolve the exact upstream text resource, revision, attribution and redistribution terms; user approval to enable the reader does not establish provenance.
+- [x] Enforce verified-text/riwayah compatibility and match timing by edition ID plus audio folder; reject malformed, overlapping or partial timing.
+- [ ] Prove exact timing/audio revision compatibility using the immutable identity above.
 - [x] Return a clearly identified audio-only result when the recording has no compatible bundled text.
 - [x] Validate requested surahs against the selected edition before constructing an audio URL.
 - [x] Resolve a verified downloaded path before catalog or timing network work.
 - [x] Make persistent settings the production default; retain the in-memory store only for tests.
-- [x] Add failed download state and enough metadata to reconcile missing, partial and corrupt files.
+- [x] Add failed download state, enumerate persisted records without network access, and require checksum, positive byte count and matching identity for completed metadata.
+- [x] Reconcile missing/corrupt files and mark abandoned transfers failed after the native transfer service confirms they are inactive.
 - [x] Add one pure timing resolver with `[start, end)` boundaries, unlabeled regions and repeated occurrences.
 - [x] Preserve coroutine cancellation instead of catching it as a normal failure.
 - [x] Distinguish successful empty results from retryable transport failures.
 - [x] Cache only successful catalog responses and add explicit request timeouts/status validation.
-- [x] Keep timing failure degradable to an untimed playback track.
+- [x] Keep both timing-discovery and segment-request failures degradable to untimed playback; preserve cancellation and retry discovery after an outage.
+- [x] Return expected failures as `QuranFailure(code, retryable, message)` inside typed catalog/edition/surah result values; preserve cancellation as an exception. Native consumers use result fields rather than parsing bridge exception text.
 
 Smallest required tests:
 
@@ -364,11 +380,41 @@ Smallest required tests:
 - [x] Cancellation is not cached as empty data.
 - [x] Timing intro, exact boundary, gap, final boundary, missing timing and repeated occurrence.
 - [x] Download metadata survives a new shared-store instance and reconciles a missing file.
-- [x] Generated Apple and C# consumers compile against the final exported API.
+- [x] Generated Apple and C# smoke/Linux consumers compile against the final exported API; final WinUI compilation and Windows/Linux runtime checks remain in T0 CI.
 
 Acceptance: a platform can implement the complete v1 flow without reaching into shared internals or reproducing a domain rule.
 
-Status: complete. The bundled text remains deliberately audio-only until P0 confirms its exact upstream QUL resource and license; its current bytes and SHA-256 checksum are recorded without claiming unverified provenance.
+Status: implementation refined; acceptance remains open. Do not call T1 complete until the unchecked content and immutable timing identity requirements above are resolved and T0 passes.
+
+#### T1 contract and validation evidence
+
+- `reciters()`, `editions()` and `surah()` return `RecitersResult`, `EditionsResult` and `SurahResult`. Check `failure` before consuming content; successful empty lists have no failure. Expected failures carry stable code, retry eligibility and safe display text; cancellation and unexpected exceptions still throw.
+- `QuranLibrary.downloads()` exposes persisted metadata before network discovery. Native applications own file inspection and must reconcile records before offering local playback. Metadata checks alone do not verify a file on disk.
+- Call `reconcileDownload` only after the OS transfer service confirms no active transfer for that record. A missing/checksum-mismatched/truncated file loses ready status; an abandoned transfer becomes failed and can be retried.
+- Bundled text remains enabled under the existing owner decision. Custom imported JSON never inherits the bundled text's verified status.
+- MP3Quran timing discovery must match both the edition ID and `folder_url` to the selected audio folder. This prevents mismatched-folder timing; it does not establish immutable audio revision identity. Until that is proved, this acceptance item remains open.
+- `hasTiming` means compatible timing is advertised for the edition; a track may still be untimed when its surah timing is missing or invalid.
+- Run `python3 Tilawa/scripts/check_content.py` from the repository root. It checks the pinned JSON SHA-256, chapter metadata, sequential verse numbers, all 114 chapter dispatches, and exact equality of all 6,236 compiled verses.
+- Run `./gradlew :shared:allTests :shared:assembleSharedReleaseXCFramework :shared:packNuget :shared:nugetReportDiagnostics :androidApp:assembleDebug` from `Tilawa`, followed by native consumer builds. Tests now cover timing discovery outage/retry, folder mismatch, invalid surah IDs, cancellation/retry, incompatible riwayah, successful empty catalog caching, incomplete/corrupt metadata and abandoned transfers.
+- Source review: [MP3Quran catalog](https://www.mp3quran.net/api/v3/reciters?language=eng), [timed reads](https://www.mp3quran.net/api/v3/ayat_timing/reads), [runner Xcode inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md). Live catalog checked 2026-09-15; Abdul Basit's Mujawwad edition is 51 (53 is Murattal), matching the product seed.
+
+#### Verified locally on 2026-09-15
+
+| Check | Result |
+|---|---|
+| Shared common tests on macOS ARM64 | 35 passed, zero failures/errors/skips |
+| Shared common tests on iOS ARM64 simulator | 35 passed, zero failures/errors/skips |
+| JSON/compiled Quran content integrity | 114 chapters and all 6,236 verses match the pinned checksum/data |
+| Release XCFramework | iOS device/simulator and macOS, ARM64 only |
+| NuGet generation and API diagnostics | Passed; `win-x64` DLL and `linux-x64` shared object only |
+| macOS Swift application build | Passed against the updated result API |
+| Swift interop runtime | 242 reciters, Al-Fatihah's 7 timing segments, and nonretryable structured unavailable-surah error |
+| Android debug build and launch | Passed; emulator displayed 242 reciters after permission fix |
+| iOS build and launch | Passed; iPhone 17 / iOS 26.2 displayed 242 reciters |
+| C# runtime-smoke and Linux shell compilation | Passed against a fresh generated NuGet, zero compiler warnings/errors |
+| Windows/Linux native runtime | Not run locally; the new CI runtime steps must pass on those OSes |
+
+Remaining external evidence before T2: the exact upstream text resource/license, a proved audio/timing revision binding, and green T0 target-host CI. No completion claim is made for those gates.
 
 ### T2 — Finish the canonical macOS v1 slice
 
@@ -376,22 +422,24 @@ Goal: turn the existing macOS proof of concept into the behavioral reference for
 
 Tasks:
 
-- [ ] Move `AVPlayer` ownership to an application-level playback controller so playback survives navigation.
-- [ ] Observe `AVPlayerItem.status`, `AVPlayer.timeControlStatus`, duration, buffering, end and failure instead of inferring state from commands.
-- [ ] Cancel or generation-guard overlapping reciter, edition and surah loads.
-- [ ] Continue only through surahs available in the selected edition.
-- [ ] Use the shared timing resolver and leave intro/gap regions unhighlighted.
-- [ ] Use persistent download metadata and a background `URLSession` configuration.
-- [ ] Write to a temporary file, validate the response/file, then atomically install it.
+- [x] Move `AVPlayer` ownership to an application-level playback controller so playback survives navigation.
+- [x] Observe `AVPlayerItem.status`, `AVPlayer.timeControlStatus`, duration, buffering, end and failure instead of inferring state from commands.
+- [x] Cancel or generation-guard overlapping reciter, edition and surah loads.
+- [x] Continue only through surahs available in the selected edition.
+- [x] Use the shared timing resolver and leave intro/gap regions unhighlighted.
+- [x] Use persistent download metadata and a background `URLSession` configuration.
+- [x] Write to a temporary file, validate the response/file, then atomically install it.
 - [ ] Reconcile downloads at launch and prove offline playback after restart.
-- [ ] Add Now Playing metadata, remote commands, media-key behavior and interruption handling.
+- [x] Add Now Playing metadata, remote commands and media-key behavior; macOS has no `AVAudioSession`, so observed `AVPlayer` pause/wait/failure state is its native interruption path.
 - [ ] Bundle and verify the selected Quran font.
 - [ ] Implement loading, buffering, offline, unavailable, error and retry states from `PRODUCT.md`.
-- [ ] Remove favorite, shuffle, repeat or other later-feature controls until their features are implemented.
+- [x] Remove favorite, shuffle, repeat or other later-feature controls until their features are implemented.
 - [ ] Add keyboard navigation, focus labels, VoiceOver labels and scalable interface text.
-- [ ] Preserve the existing reciter → edition → reader information architecture and visual tokens.
+- [x] Preserve the existing reciter → edition → reader information architecture and visual tokens.
 
 Acceptance: the complete `PRODUCT.md` v1 acceptance journey passes on macOS ARM64 and becomes the reference recording/screenshots for T3–T6.
+
+Status: paused pending T0, T1 and P0 acceptance. Existing core playback, timing, sequencing, downloads and system controls compile on macOS ARM64. Remaining gates are the licensed bundled font, an offline-restart runtime proof, and the final state/accessibility pass.
 
 ### T3 — Implement Android v1
 

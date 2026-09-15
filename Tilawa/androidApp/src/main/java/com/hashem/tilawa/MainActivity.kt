@@ -60,7 +60,8 @@ fun App() = MaterialTheme {
 
         LaunchedEffect(library) {
             status = try {
-                "${library.reciters().size} reciters available"
+                val result = library.reciters()
+                result.failure?.message ?: "${result.reciters.size} reciters available"
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
