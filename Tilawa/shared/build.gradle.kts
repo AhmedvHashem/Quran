@@ -9,11 +9,10 @@ plugins {
     alias(libs.plugins.kotlin.native.nuget)
 }
 
-// ponytail: SQLDelight removed until a schema lands — its runtime drags
-// co.touchlab:sqliter-driver (-lsqlite3) into every native link, and SQLiter
-// has no linuxX64 variant (mingwX64 only links on a Windows host).
-// Verified Aug 2026; re-add for android/apple with the first .sq file.
-// Persistence gate for mingw/linux: .ai/arch/APP_STACKS_PLAN.md
+// Durable library state is a serialized document on kotlinx-io, not SQL.
+// SQLDelight's native driver links -lsqlite3 through SQLiter, so the mingwX64
+// target only links on a Windows host. kotlinx-io publishes every target we
+// build and needs no system library. Decision and evidence: .ai/TECH.md, T2.
 
 kotlin {
     android {
@@ -71,7 +70,7 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
-            implementation(libs.multiplatform.settings)
+            implementation(libs.kotlin.io.core)
             implementation(libs.kermit)
         }
         commonTest.dependencies {
@@ -80,19 +79,16 @@ kotlin {
             implementation(libs.ktor.client.mock)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
-            implementation(libs.multiplatform.settings.test)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
-            implementation(libs.multiplatform.settings.no.arg)
+            implementation(libs.androidx.startup.runtime)
         }
         appleMain.dependencies {
             implementation(libs.ktor.client.darwin)
-            implementation(libs.multiplatform.settings.no.arg)
         }
         mingwX64Main.dependencies {
             implementation(libs.ktor.client.winhttp)
-            implementation(libs.multiplatform.settings.no.arg)
         }
         linuxX64Main.dependencies {
             implementation(libs.ktor.client.curl)

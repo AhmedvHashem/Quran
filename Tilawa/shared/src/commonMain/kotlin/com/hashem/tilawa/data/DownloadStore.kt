@@ -2,7 +2,8 @@ package com.hashem.tilawa.data
 
 import com.hashem.tilawa.domain.model.DownloadRecord
 import com.hashem.tilawa.domain.model.DownloadStatus
-import com.russhwolf.settings.Settings
+import com.hashem.tilawa.data.local.Document
+import com.hashem.tilawa.data.local.FileDocument
 import kotlinx.serialization.json.Json
 
 internal interface DownloadStore {
@@ -52,32 +53,34 @@ internal class InMemoryDownloadStore : DownloadStore {
     }
 }
 
-internal class SettingsDownloadStore(
-    private val settings: Settings,
+/** Every record lives in one durable document, rewritten on each change. */
+internal class DocumentDownloadStore(
+    private val document: Document,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : DownloadStore {
-    override fun all(): List<DownloadRecord> = settings.keys.filter { it.startsWith("download_") }
-        .mapNotNull { storedKey ->
-            settings.getStringOrNull(storedKey)?.let {
-                runCatching { json.decodeFromString<DownloadRecord>(it) }.getOrNull()
-            }?.takeIf { storedKey == key(it.editionId, it.chapterId) }
-        }
+    private val records = document.read()
+        ?.let { runCatching { json.decodeFromString<List<DownloadRecord>>(it) }.getOrNull() }
+        .orEmpty()
+        .associateByTo(mutableMapOf()) { it.editionId to it.chapterId }
+
+    override fun all(): List<DownloadRecord> = records.values.toList()
 
     override fun record(editionId: Int, chapterId: Int): DownloadRecord =
-        settings.getStringOrNull(key(editionId, chapterId))
-            ?.let { runCatching { json.decodeFromString<DownloadRecord>(it) }.getOrNull() }
-            ?.takeIf { it.editionId == editionId && it.chapterId == chapterId }
-            ?: emptyRecord(editionId, chapterId)
+        records[editionId to chapterId] ?: emptyRecord(editionId, chapterId)
 
     override fun set(record: DownloadRecord) {
-        settings.putString(key(record.editionId, record.chapterId), json.encodeToString(record))
+        records[record.editionId to record.chapterId] = record
+        persist()
     }
 
     override fun remove(editionId: Int, chapterId: Int) {
-        settings.remove(key(editionId, chapterId))
+        records.remove(editionId to chapterId)
+        persist()
     }
 
-    private fun key(editionId: Int, chapterId: Int) = "download_${editionId}_$chapterId"
+    private fun persist() {
+        document.write(json.encodeToString(records.values.toList()))
+    }
 }
 
 internal fun emptyRecord(editionId: Int, chapterId: Int) = DownloadRecord(
@@ -86,7 +89,7 @@ internal fun emptyRecord(editionId: Int, chapterId: Int) = DownloadRecord(
     status = DownloadStatus.NOT_DOWNLOADED,
 )
 
-internal expect fun defaultDownloadStore(): DownloadStore
+internal fun defaultDownloadStore(): DownloadStore = DocumentDownloadStore(FileDocument("downloads.json"))
 
 internal fun DownloadRecord.hasCompleteMetadata(): Boolean =
     status == DownloadStatus.DOWNLOADED && chapterId in 1..114 && editionId > 0 &&

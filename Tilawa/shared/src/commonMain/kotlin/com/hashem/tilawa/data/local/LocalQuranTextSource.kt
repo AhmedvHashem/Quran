@@ -24,11 +24,11 @@ internal class LocalQuranTextSource(
         val CONTENT_MANIFEST = ContentManifest(
             textEditionId = "uthmani-hafs-v1",
             displayName = "Uthmani Quran text (Hafs)",
-            source = "Bundled Uthmani Hafs dataset; historical QUL attribution, exact upstream resource pending verification",
+            source = "Bundled Uthmani Hafs dataset; historical QUL attribution; exact upstream resource not recorded",
             revision = "tilawa-bundle-2026-09-13",
             checksumSha256 = "8d7ecf45e8c7ce6f796102b33081aca53b1e5d46eb6ff31ff6bd553c73523899",
-            license = "Pending exact upstream resource verification",
-            notices = "Enabled for the v1 Hafs reader by product-owner approval. Bytes are checksum-locked; confirm upstream attribution and redistribution terms before release.",
+            license = "Free to use as-is, confirmed by the product owner on 2026-09-21; license identifier not supplied",
+            notices = "The product owner confirmed on 2026-09-21 that the license permits using this file as-is. Preserve the checksum-pinned text unchanged. Exact upstream attribution is not recorded.",
             supportedRiwayahIds = setOf(1),
             isVerified = true,
         )

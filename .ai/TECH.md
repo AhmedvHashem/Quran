@@ -1,8 +1,8 @@
 # Tilawa application stack
 
-Status: authoritative target architecture. Updated 2026-09-15.
+Status: authoritative target architecture. Updated 2026-09-22.
 
-This document is the only technical architecture source of truth for Tilawa. Product behavior and features are defined in [PRODUCT.md](../PRODUCT.md).
+This document is the only technical architecture source of truth for Tilawa. Product behavior and features are defined in [PRODUCT.md](PRODUCT.md).
 
 ## Architecture decision
 
@@ -21,6 +21,14 @@ Kotlin Multiplatform shared core
 The governing boundary is:
 
 > Share product logic and portable infrastructure. Implement UI, navigation, media playback, lifecycle, background execution and operating-system integration natively in each platform shell.
+
+### Current implementation focus
+
+- Build the audio player first: native playback engines, the persistent player bar, lifecycle, system media controls, continuous surah navigation, downloads and offline restart.
+- Build the reader as an overlay that the player bar opens and closes. It never owns the playback engine.
+- Add a durable library store for history, collections, bookmarks and download records, and prove it on all five targets before building on it.
+- Keep the current Quran rendering and highlighting. Change it only for a correctness, security, data-loss or accessibility regression.
+- Defer fixed-page Mushaf rendering, word-level timing, translations and tafsir.
 
 ### Supported targets
 
@@ -60,10 +68,15 @@ The KMP shared module owns logic that must behave identically everywhere:
 - Catalog retrieval and mapping.
 - Recording identity and text/audio/timing compatibility rules.
 - Featured-reciter ordering rules.
-- Playback-track and queue policy, but not the audio engine.
+- Playback-track and queue policy, including play-all and shuffle order, but not the audio engine.
 - Pure position-to-ayah resolution using the native player's reported position.
-- Download metadata, desired state and reconciliation policy, but not OS background execution.
-- Favorites, bookmarks, listening progress and history when those features are introduced.
+- Download metadata, desired state, byte accounting and reconciliation policy, but not OS background execution.
+- Listening sessions: identity, last media position, derived ayah, heard fraction and newest-first ordering.
+- Collections: identity, the pinned Favorites rule, manual order and item validity.
+- Ayah bookmarks: edition, surah, ayah and media position identity.
+- Storage-budget accounting: used bytes, per-reciter totals and the limit-reached decision.
+- Search normalization and matching predicates over reciters, editions, surahs and library items. Display text stays verbatim.
+- The durable library store and its schema, migrations and queries.
 - Networking and serialization where a portable implementation is sufficient.
 - Portable validation, errors and cancellation semantics.
 - Pure business-use cases and their tests.
@@ -145,6 +158,9 @@ Primary references: [SKIE](https://skie.touchlab.co/intro), [SwiftUI navigation]
 | Media | AVFoundation `AVPlayer` owned at application level |
 | System playback | Now Playing, remote commands, media keys and interruption handling |
 | Downloads | Background `URLSession`, app-support storage and atomic file replacement |
+| Materials | SwiftUI `Material` and `NSVisualEffectView` for the sidebar, title bar and player bar; opaque content and Quran surfaces |
+| Tables | SwiftUI `Table` for the edition, downloads and collection lists |
+| Search | `.searchable` with native filter controls |
 | Distribution | Signed and notarized macOS application for Apple Silicon |
 
 The macOS application remains the canonical product implementation, but it must still follow current macOS guidance rather than introducing custom controls where native ones already fit.
@@ -237,12 +253,32 @@ Examples:
 | Play a surah | Recording identity, URL/local reference, queue policy and timing data | Decoder, player, audio focus, media session and actual playback state |
 | Highlight an ayah | Pure mapping from media position to a validated timing segment | Position observation, rendering, scrolling and animation |
 | Download a surah | Download identity, requested state and metadata rules | Background transfer, file destination, permissions and OS scheduling |
-| Navigate reciter → edition → reader | Available entities and selection state | Navigation container, transitions, restoration and window/device adaptation |
+| Navigate reciter → edition → surahs → reader | Available entities and selection state | Navigation container, transitions, restoration and window/device adaptation |
+| Open the reader from the player bar | Nothing; the reader reads existing playback state | Overlay presentation, focus movement, focus mode and the guarantee that audio is untouched |
+| Resume a surah | Session identity, stored media position and derived ayah | Seeking the engine to that position and restoring the screen |
+| Keep a collection | Collection and item identity, manual order and validity | Reorder gesture, rename affordance, drag and drop and list animation |
+| Bookmark an ayah | Edition, surah, ayah and media position | Creation affordance, list presentation and opening the reader at that ayah |
+| Report storage use | Byte totals, per-reciter grouping and the limit decision | Budget control, disk reporting and the platform storage-management entry point |
+| Search the library | Normalized matching predicates over shared entities | Search field, debounce, result presentation and the no-results state |
 | Display an error | Stable error meaning and retry eligibility | Native message, alert, inline state and accessibility announcement |
 
 ## Persistence and content
 
-Use plain files plus Multiplatform Settings for v1 downloads and small preferences. Add a database only when a concrete relational or indexed-search requirement appears and only after its Windows and Linux native targets pass build and runtime validation.
+Tilawa has one durable store: serialized documents on disk, owned by the shared core.
+
+A document is read once into memory, changed there and rewritten whole. Writes go to a temporary file and then atomically replace the target, so a crash mid-write never leaves a partial document.
+
+| Document | Holds |
+|---|---|
+| `downloads.json` | Download records, including byte size and bitrate |
+| `sessions.json` | Listening sessions with media position, derived ayah and heard fraction |
+| `collections.json` | Collections, their manual order and their items |
+| `bookmarks.json` | Ayah bookmarks |
+| `preferences.json` | Reserved storage size, reader text size, last selected filters |
+
+This fits the data. The whole library is a few thousand small records on one device. Ordering, day grouping, per-reciter grouping, byte sums and name search are operations on an in-memory list, not queries that need an index. Rewriting one document costs a few hundred kilobytes.
+
+T2 selected this over SQL and recorded the evidence. Quran text search stays a later feature, and it would index the bundled text, not this store.
 
 Store enough durable metadata to reopen downloaded audio after restart. Resolve verified local files before requiring the network. Write downloads to a temporary file, validate completion, then atomically replace the final file. Reconcile missing, partial and corrupt files at startup.
 
@@ -254,14 +290,16 @@ Use native CI hosts and do not treat compilation on one host as five-platform pr
 
 | CI lane | Required checks |
 |---|---|
-| Shared | Common unit tests, API compatibility and content/timing validation |
+| Shared | Common unit tests, API compatibility, content/timing validation and durable-document round-trip tests |
 | Android | JVM/unit tests, Compose UI smoke test and Media3 lifecycle test |
 | iOS | XCFramework/SKIE build, Swift compile and simulator flow test |
 | macOS ARM64 | XCFramework/SKIE build, Swift build, product-flow test and packaging smoke test |
 | Windows x64 | Native core/NuGet generation, WinUI build, generated-binding lifecycle test and MSIX smoke test |
 | Linux x64 | Native core/NuGet generation, Gir.Core app build, GTK/GStreamer integration test and Flatpak smoke test |
 
-The minimum cross-platform acceptance slice is one reciter, two surahs, streaming, download, offline restart, timed and untimed playback, native play/pause controls, cancellation and one visible failure/retry path.
+The minimum cross-platform acceptance slice is one reciter, two surahs, streaming, seek, opening and closing the reader without disturbing audio, download, offline restart, one resumed session, one collection item, one ayah bookmark, native system controls, cancellation and one visible failure and retry path.
+
+Each platform CI lane additionally writes a document on its real target and reads it back in a second process.
 
 ## Version 1 technical implementation plan
 
@@ -271,7 +309,9 @@ The minimum cross-platform acceptance slice is one reciter, two surahs, streamin
 - Reuse the existing shared models, repository, tests and macOS screens where they satisfy this document.
 - Replace target-incompatible code directly; do not preserve two bridge or shell implementations.
 - Keep each native player inside its application. Share inputs, timing rules and durable metadata, not a universal player abstraction.
-- Add no database, backend, dependency-injection framework or shared navigation framework in v1.
+- Keep the current Quran rendering unchanged unless the reader specification in `PRODUCT.md` requires the change.
+- Add no backend, dependency-injection framework or shared navigation framework in v1.
+- Keep exactly one durable store mechanism. Every new entity is another document, never a second mechanism.
 - Do not implement anything from `PRODUCT.md`'s later-feature list.
 - Do not leave inactive future controls in a v1 interface.
 
@@ -279,8 +319,8 @@ The minimum cross-platform acceptance slice is one reciter, two surahs, streamin
 
 | Area | Starting point | V1 gap |
 |---|---|---|
-| Shared core | Reciters, editions, chapters, bundled verses, MP3Quran client, playback track, timing DTOs and download-state implementations exist | Durable default storage, content identity, timing validation, local-first behavior, explicit failures and cancellation |
-| macOS | Reciter library, edition selection, reader, AVPlayer wrapper, timing-aware/plain scrubbers and foreground download exist | App-owned player, observed engine state, persistent offline restart, request cancellation, content/font validation and accessibility pass |
+| Shared core | Reciters, editions, chapters, bundled verses, MP3Quran client, playback track, timing DTOs and download-state implementations exist | The durable library store, sessions, collections, bookmarks, search normalization, byte accounting and shuffle order |
+| macOS | Reciter library, edition selection, reader, AVPlayer wrapper, timing-aware and plain scrubbers and foreground download exist | The redesign's eight screens, the persistent player bar, the reader overlay and focus mode, translucent materials, app-owned player, observed engine state, persistent offline restart, cancellation and the accessibility pass |
 | Android | Compose template consumes shared Kotlin directly | Entire v1 product slice and Media3 integration |
 | iOS | SwiftUI template consumes the Kotlin framework | SKIE and the entire v1 product slice |
 | Windows | WinUI shell exists | NuGet-generated shared API, x64-only configuration and the entire v1 product slice |
@@ -292,17 +332,18 @@ The minimum cross-platform acceptance slice is one reciter, two surahs, streamin
 ```text
 T0 Interop and toolchain proof
 └── T1 Shared v1 contract and correctness
-    └── T2 Canonical macOS v1
-        ├── T3 Android v1
-        ├── T4 iOS v1
-        ├── T5 Windows v1
-        └── T6 Linux v1
-            └── T7 Parity and release validation
+    └── T2 Durable library store on all five targets
+        └── T3 Canonical macOS v1
+            ├── T4 Android v1
+            ├── T5 iOS v1
+            ├── T6 Windows v1
+            └── T7 Linux v1
+                └── T8 Parity and release validation
 ```
 
-**Current gate (2026-09-15): T2 is paused. Complete T0 acceptance, T1 acceptance and P0 before resuming it. Existing T2 changes are preserved, but their presence does not waive a prerequisite. A checked implementation task is not acceptance evidence.**
+**Current gate (2026-09-22): T0 is complete. T2 has chosen and proved its store on a macOS host; only its Windows and Linux CI cross-process check is open, so the library increments may start. T1 is complete for the audio scope and reopened for the redesign's library scope. P0 is reopened for the redesign's interaction contract. T3 work may proceed. The exact audio/timing revision binding stays deferred and blocks only future timing and highlighting changes, not core playback.**
 
-T3–T6 may proceed independently after T2 locks the behavior. They are complete only when T7 verifies the same acceptance journey on every target.
+T4 to T7 may proceed independently after T3 locks the behavior. They are complete only when T8 verifies the same acceptance journey on every target.
 
 ### T0 — Prove the selected toolchain and interop
 
@@ -333,13 +374,13 @@ Acceptance:
 
 Stop condition: do not begin full Windows or Linux UI work until their generated bindings run on the real target OS.
 
-Status: acceptance open. [Run 34787114717](https://github.com/AhmedvHashem/Quran/actions/runs/34787114717) compiled the Windows/Linux consumers, but did not run them; the Apple lane failed because the default Xcode 16 SDK lacks the Glass APIs. The workflow now pins installed Xcode 26.3 and runs explicit Apple/C# interop smoke programs. These workflow changes still need a green target-host run.
+Status: complete. [Run 35030465383](https://github.com/AhmedvHashem/Quran/actions/runs/35030465383), for commit `93d901d`, passed Apple, Windows and Linux on 2026-09-15 (verified 2026-09-21). Windows now uses Ktor WinHTTP; both C# runtime smoke checks pass native loading, catalog access, cancellation, disposal and structured failures. Apple uses Xcode 26.3. Earlier failures are superseded by this run.
 
-Remaining T0 acceptance evidence:
+T0 acceptance evidence:
 
-- [ ] Green Apple CI with Xcode 26.3, framework generation, Swift smoke and iOS compile.
-- [ ] Green Windows x64 runtime smoke: native load, nonempty live catalog, cancellation and deterministic disposal.
-- [ ] Green Linux x64 runtime smoke with the same checks.
+- [x] Green Apple CI with Xcode 26.3, framework generation, Swift smoke and iOS compile.
+- [x] Green Windows x64 runtime smoke: native load, nonempty live catalog, cancellation and deterministic disposal.
+- [x] Green Linux x64 runtime smoke with the same checks.
 - [x] Reciter-call runtime evidence from Android and iOS: Pixel 10 emulator and iPhone 17 / iOS 26.2 both displayed “242 reciters available” on 2026-09-15. Android required the missing `INTERNET` permission to stop an OkHttp dispatcher crash.
 
 Local runtime command: `cd Tilawa/macosApp && swift run InteropSmoke`. C# command on each target OS: `dotnet run --project interopSmoke/InteropSmoke.csproj -r win-x64` or `-r linux-x64` from `Tilawa`. Neither a skipped native test nor a cross-compiled executable closes these gates.
@@ -353,11 +394,11 @@ Tasks:
 - [x] Keep `QuranLibrary` as the single exported composition root.
 - [x] Export only reciters, editions, chapters, verses, playback-track data, timing resolution and download metadata required by v1.
 - [x] Add recording identity: provider, edition, reciter, riwayah, style and provider-folder identity.
-- [ ] Establish an immutable recording revision or checksum binding for timing; a URL is not proof that remote audio bytes have not changed.
+- [ ] Establish an immutable recording revision or checksum binding for timing; deferred until timing/highlighting work resumes.
 - [x] Add the bundled-content manifest and verify its checksum against both the JSON and all compiled verses.
-- [ ] Resolve the exact upstream text resource, revision, attribution and redistribution terms; user approval to enable the reader does not establish provenance.
+- [x] Record the owner's 2026-09-21 confirmation that the bundled text is free to use as-is; preserve its revision, checksum and bytes. Keep exact upstream URL/license identifier explicitly unrecorded rather than inventing them.
 - [x] Enforce verified-text/riwayah compatibility and match timing by edition ID plus audio folder; reject malformed, overlapping or partial timing.
-- [ ] Prove exact timing/audio revision compatibility using the immutable identity above.
+- [ ] Prove exact timing/audio revision compatibility using the immutable identity above; deferred until timing/highlighting work resumes.
 - [x] Return a clearly identified audio-only result when the recording has no compatible bundled text.
 - [x] Validate requested surahs against the selected edition before constructing an audio URL.
 - [x] Resolve a verified downloaded path before catalog or timing network work.
@@ -380,11 +421,35 @@ Smallest required tests:
 - [x] Cancellation is not cached as empty data.
 - [x] Timing intro, exact boundary, gap, final boundary, missing timing and repeated occurrence.
 - [x] Download metadata survives a new shared-store instance and reconciles a missing file.
-- [x] Generated Apple and C# smoke/Linux consumers compile against the final exported API; final WinUI compilation and Windows/Linux runtime checks remain in T0 CI.
+- [x] Generated Apple, WinUI and Linux consumers compile against the exported API; Windows/Linux runtime smoke checks pass in run 35030465383.
 
 Acceptance: a platform can implement the complete v1 flow without reaching into shared internals or reproducing a domain rule.
 
-Status: implementation refined; acceptance remains open. Do not call T1 complete until the unchecked content and immutable timing identity requirements above are resolved and T0 passes.
+Status: complete for the audio-player scope. Reopened on 2026-09-22 for the redesign's library scope. The immutable audio/timing revision binding remains deferred and must be completed before timing or highlighting behavior changes.
+
+#### T1 additions for the redesign
+
+These extend the same exported contract. They depend on T2 for storage, so define the types first and implement persistence after T2 passes.
+
+- [ ] Add listening-session identity, last media position, derived ayah, heard fraction and newest-first ordering.
+- [ ] Add collection identity, the pinned Favorites rule, manual ordering and item validity when a recording leaves the catalog.
+- [ ] Add ayah-bookmark identity: edition, surah, ayah and media position.
+- [ ] Add byte size and bitrate to download metadata, plus per-reciter and total byte accounting.
+- [ ] Add the storage-budget rule: report usage, refuse a new download at the limit and never delete a user's file.
+- [ ] Add search normalization and matching predicates for English names, Arabic names, transliterations and surah numbers. Keep display text verbatim.
+- [ ] Add deterministic play-all and shuffle order for an edition and for a collection.
+- [ ] Keep the exported API narrow: expose product operations, not the store.
+
+Smallest required tests for the additions:
+
+- [ ] A replayed surah updates one session instead of creating two.
+- [ ] Favorites cannot be renamed, reordered or deleted.
+- [ ] A collection keeps its manual order across a new store instance.
+- [ ] An item whose recording left the catalog stays present and reports unavailable.
+- [ ] A bookmark round-trips edition, surah, ayah and media position.
+- [ ] Byte accounting matches the sum of the download records.
+- [ ] A download at the budget limit is refused, and no existing file is removed.
+- [ ] An Arabic query and an English query find the same reciter.
 
 #### T1 contract and validation evidence
 
@@ -392,7 +457,7 @@ Status: implementation refined; acceptance remains open. Do not call T1 complete
 - `QuranLibrary.downloads()` exposes persisted metadata before network discovery. Native applications own file inspection and must reconcile records before offering local playback. Metadata checks alone do not verify a file on disk.
 - Call `reconcileDownload` only after the OS transfer service confirms no active transfer for that record. A missing/checksum-mismatched/truncated file loses ready status; an abandoned transfer becomes failed and can be retried.
 - Bundled text remains enabled under the existing owner decision. Custom imported JSON never inherits the bundled text's verified status.
-- MP3Quran timing discovery must match both the edition ID and `folder_url` to the selected audio folder. This prevents mismatched-folder timing; it does not establish immutable audio revision identity. Until that is proved, this acceptance item remains open.
+- MP3Quran timing discovery must match both the edition ID and `folder_url` to the selected audio folder. This prevents mismatched-folder timing; it does not establish immutable audio revision identity. The remaining proof is deferred and must be completed before timing or highlighting behavior changes.
 - `hasTiming` means compatible timing is advertised for the edition; a track may still be untimed when its surah timing is missing or invalid.
 - Run `python3 Tilawa/scripts/check_content.py` from the repository root. It checks the pinned JSON SHA-256, chapter metadata, sequential verse numbers, all 114 chapter dispatches, and exact equality of all 6,236 compiled verses.
 - Run `./gradlew :shared:allTests :shared:assembleSharedReleaseXCFramework :shared:packNuget :shared:nugetReportDiagnostics :androidApp:assembleDebug` from `Tilawa`, followed by native consumer builds. Tests now cover timing discovery outage/retry, folder mismatch, invalid surah IDs, cancellation/retry, incompatible riwayah, successful empty catalog caching, incomplete/corrupt metadata and abandoned transfers.
@@ -412,13 +477,76 @@ Status: implementation refined; acceptance remains open. Do not call T1 complete
 | Android debug build and launch | Passed; emulator displayed 242 reciters after permission fix |
 | iOS build and launch | Passed; iPhone 17 / iOS 26.2 displayed 242 reciters |
 | C# runtime-smoke and Linux shell compilation | Passed against a fresh generated NuGet, zero compiler warnings/errors |
-| Windows/Linux native runtime | Not run locally; the new CI runtime steps must pass on those OSes |
+| Windows/Linux native runtime | Subsequently passed on their actual CI hosts in run 35030465383 |
 
-Remaining external evidence before T2: the exact upstream text resource/license, a proved audio/timing revision binding, and green T0 target-host CI. No completion claim is made for those gates.
+T3 audio-player work may proceed. A proved audio/timing revision binding is required only before timing or highlighting behavior changes; the text file remains unchanged.
 
-### T2 — Finish the canonical macOS v1 slice
+### T2 — Prove the durable library store on all five targets
 
-Goal: turn the existing macOS proof of concept into the behavioral reference for every other application.
+Goal: choose one store for history, collections, bookmarks and download records, and prove it runs on every target before any feature depends on it.
+
+Decision: **serialized documents on `kotlinx-io`**, not SQL.
+
+Tasks:
+
+- [x] Write the data shape from the `PRODUCT.md` content model: sessions, collections, collection items, bookmarks and download records.
+- [x] Apply the dependency policy order and record the candidates with their target support.
+- [x] Verify Kotlin/Native support for `mingwX64` before anything else.
+- [x] Verify `linuxX64`, `macosArm64`, `iosArm64` and Android support.
+- [x] Pin the store version with the existing Kotlin, SKIE and `kotlin-native-nuget` compatibility set.
+- [x] Implement the common document store and one platform state directory per target.
+- [x] Port `DownloadStore` onto it and delete the two mechanisms it replaced.
+- [x] Prove a write in one store instance is readable by the next instance.
+- [x] Prove every target compiles and links, including `mingwX64` and `linuxX64` from a macOS host.
+- [ ] Prove a cross-process write and read on Windows and Linux CI hosts through the generated NuGet bindings.
+- [ ] Add the document round-trip check to every platform CI lane.
+
+#### Candidates and evidence
+
+Checked against Maven Central module metadata on 2026-09-22.
+
+| Candidate | `mingwX64` | `linuxX64` | Verdict |
+|---|---|---|---|
+| SQLDelight `native-driver` → SQLiter 1.3.3 | artifact published | artifact published | **Rejected.** The artifacts exist, but SQLiter links `-lsqlite3` against a system SQLite. The `mingwX64` target then links only on a Windows host, which breaks local and CI cross-compilation from macOS. |
+| `kotlinx-io-core` 0.9.1 | published | published | **Selected.** JetBrains-maintained, covers every target this project builds, needs no system library. |
+
+An earlier comment in `shared/build.gradle.kts` claimed SQLiter publishes no `linuxX64` variant. That was wrong: 1.3.1 and later publish both `linux_x64` and `mingw_x64`. The real constraint is the `-lsqlite3` link, not the missing artifact. The comment is replaced.
+
+SQL was also more machinery than the data needs. See Persistence and content above.
+
+#### What this replaced
+
+`DownloadStore` previously used two mechanisms: Multiplatform Settings on Android, Apple and Windows, and a hand-written POSIX file store on Linux. Both are gone.
+
+- Settings is a preference store. Holding roughly 1,248 download records in `NSUserDefaults` or the Windows registry is the wrong use, and the Windows implementation was `@ExperimentalSettingsImplementation`.
+- Multiplatform Settings has no Linux target, which forced the second mechanism in the first place.
+- `multiplatform-settings` is removed from the build. Preferences become another document.
+
+#### Verified locally on 2026-09-22
+
+| Check | Result |
+|---|---|
+| `:shared:allTests` | 36 passed on `macosArm64` and 36 on `iosSimulatorArm64`; zero failures, errors or skips |
+| `:shared:linuxX64Binaries` | Linked from a macOS host |
+| `:shared:mingwX64Binaries` | Linked from a macOS host |
+| `:shared:packNuget`, `:shared:nugetReportDiagnostics` | Passed |
+| `:shared:assembleSharedReleaseXCFramework` | Written for iOS device, iOS simulator and macOS, ARM64 only |
+| `:androidApp:assembleDebug` | Passed; `TilawaStorageInitializer` merges into the application manifest |
+
+`mingwX64Test` and `linuxX64Test` are skipped on a macOS host because their executables cannot run there. Linking is proved; running stays a CI-host gate, as T0 already requires.
+
+Acceptance:
+
+- One mechanism and one code path serve all five applications.
+- A record written by one store instance is readable by the next.
+- Windows and Linux exercise the store on their real CI hosts through the generated bindings.
+- Cancellation and disposal behave the same as the rest of the shared API.
+
+Status: selected and proved on a macOS host. The remaining gate is the cross-process read on the Windows and Linux CI hosts. Sessions, collections and bookmarks may now be built as further documents.
+
+### T3 — Finish the canonical macOS v1 slice
+
+Goal: build the redesign on macOS and make it the behavior reference for every other application.
 
 Tasks:
 
@@ -431,103 +559,111 @@ Tasks:
 - [x] Write to a temporary file, validate the response/file, then atomically install it.
 - [ ] Reconcile downloads at launch and prove offline playback after restart.
 - [x] Add Now Playing metadata, remote commands and media-key behavior; macOS has no `AVAudioSession`, so observed `AVPlayer` pause/wait/failure state is its native interruption path.
-- [ ] Bundle and verify the selected Quran font.
 - [ ] Implement loading, buffering, offline, unavailable, error and retry states from `PRODUCT.md`.
-- [x] Remove favorite, shuffle, repeat or other later-feature controls until their features are implemented.
-- [ ] Add keyboard navigation, focus labels, VoiceOver labels and scalable interface text.
-- [x] Preserve the existing reciter → edition → reader information architecture and visual tokens.
+- [ ] Rebuild the information architecture as the redesign defines it: sidebar, Reciters, Reciter detail, Recording edition, Recently Played, Downloads and Collections.
+- [ ] Move the player into a persistent bottom bar present on every screen.
+- [ ] Make the reader an overlay that only the player-bar chip opens and closes, and prove audio is untouched.
+- [ ] Add reader focus mode and the reader text-size controls.
+- [ ] Apply the redesign's translucent materials, and verify contrast with reduced transparency and increased contrast.
+- [ ] Add search and the reciter filter chips.
+- [ ] Build the library destinations on the T2 store: history and resume, collections and bookmarks, downloads and the storage budget.
+- [ ] Add play all and shuffle for an edition and a collection.
+- [ ] Add keyboard navigation, focus labels, VoiceOver labels and scalable text across the whole journey.
 
-Acceptance: the complete `PRODUCT.md` v1 acceptance journey passes on macOS ARM64 and becomes the reference recording/screenshots for T3–T6.
+Acceptance: the `PRODUCT.md` v1 acceptance journey passes on macOS ARM64 and becomes the reference recording and screenshots for T4 to T7.
 
-Status: paused pending T0, T1 and P0 acceptance. Existing core playback, timing, sequencing, downloads and system controls compile on macOS ARM64. Remaining gates are the licensed bundled font, an offline-restart runtime proof, and the final state/accessibility pass.
+Status: active, and rescoped on 2026-09-22. Core playback, sequencing, downloads and system controls compile on macOS ARM64 and stay. The player-bar move, the reader overlay, the two new screens, the three library destinations and the material pass are new work. Library destinations wait for T2.
 
-### T3 — Implement Android v1
+### T4 — Implement Android v1
 
 Goal: reproduce the canonical behavior with Android-native Compose and Media3 patterns.
 
 Tasks:
 
-- [ ] Replace the template UI with reciter library, edition selection and reader/player destinations.
+- [ ] Replace the template UI with the canonical destinations, the persistent player bar and the reader.
 - [ ] Use Material 3 adaptive layouts: phone navigation on compact widths and list/detail or supporting panes when space permits.
 - [ ] Use Android ViewModel and lifecycle-aware Flow collection around the direct shared API.
 - [ ] Implement application-level playback in a Media3 `MediaSessionService` with ExoPlayer.
 - [ ] Connect the UI through a media controller rather than owning ExoPlayer in a composable.
 - [ ] Provide media notification, audio focus, noisy-route/headset handling and system transport controls.
 - [ ] Use Media3 downloads for offline audio and register verified results with the shared core.
-- [ ] Render bundled Quran text with correct RTL, Arabic shaping, font and native accessibility semantics.
-- [ ] Implement timed highlighting/plain fallback and all required product states.
+- [ ] Bind the library destinations to the shared durable store.
+- [ ] Implement every required state from `PRODUCT.md`, including no results and storage budget reached.
 - [ ] Add one Compose navigation/UI journey test plus one service/download lifecycle test.
 
 Acceptance: the full v1 journey passes on a phone-sized emulator and one expanded-width emulator/device.
 
-### T4 — Implement iOS v1
+### T5 — Implement iOS v1
 
 Goal: reproduce the canonical behavior with SwiftUI and Apple media/background APIs.
 
 Tasks:
 
 - [ ] Build Swift-facing adapters only where the SKIE API still needs presentation-friendly shaping.
-- [ ] Replace the template with reciter library, edition selection and reader/player screens.
+- [ ] Replace the template with the canonical screens, the persistent player bar and the reader overlay.
 - [ ] Use `NavigationStack` on compact devices and `NavigationSplitView` where the device/window supports it.
 - [ ] Add an application-owned AVPlayer controller with observed playback/buffering/failure state.
 - [ ] Add `AVAudioSession`, Now Playing and remote-command integration.
 - [ ] Use background `URLSession` for downloads and register validated files with the shared core.
-- [ ] Render bundled Quran text with correct RTL, Dynamic Type and VoiceOver semantics.
-- [ ] Implement timed highlighting/plain fallback and all required product states.
+- [ ] Bind the library destinations to the shared durable store.
+- [ ] Implement every required state from `PRODUCT.md`, including no results and storage budget reached.
 - [ ] Add one XCUITest for the primary journey and focused tests for player/download lifecycle.
 
 Acceptance: the full v1 journey passes on an iPhone simulator/device and an iPad or regular-width simulator.
 
-### T5 — Implement Windows v1
+### T6 — Implement Windows v1
 
 Goal: reproduce the canonical behavior with WinUI 3 and the generated shared-core NuGet API.
 
 Tasks:
 
 - [ ] Remove direct shared-library calls from application UI code; use the generated NuGet API through a small C# application service.
-- [ ] Implement reciter library, edition selection and reader/player pages with `NavigationView`, `Frame` and adaptive WinUI layouts.
+- [ ] Implement the canonical pages, the persistent player bar and the reader with `NavigationView`, `Frame` and adaptive WinUI layouts.
 - [ ] Use `MediaPlayer` as an application-owned service and `MediaPlaybackList` only if the v1 chapter-continuation behavior requires it.
 - [ ] Integrate System Media Transport Controls and observed buffering/failure state.
 - [ ] Use Background Transfer for durable downloads and register verified files with the shared core.
 - [ ] Handle generated wrapper disposal and cancellation deterministically.
-- [ ] Render bundled Quran text with correct flow direction, font, keyboard navigation and Narrator semantics.
-- [ ] Implement timed highlighting/plain fallback and all required product states.
+- [ ] Bind the library destinations to the shared durable store through the generated bindings.
+- [ ] Implement every required state from `PRODUCT.md` with keyboard and Narrator support.
 - [ ] Produce and clean-install a signed-development x64 MSIX package.
 
 Acceptance: the full v1 journey passes on a clean Windows x64 environment from the installed MSIX package.
 
-### T6 — Implement Linux v1
+### T7 — Implement Linux v1
 
 Goal: reproduce the canonical behavior with C#, Gir.Core, GTK 4 and libadwaita.
 
 Tasks:
 
 - [ ] Use one C#/.NET application project referencing the Tilawa core package and required Gir.Core packages.
-- [ ] Implement an `Adw.Application` and adaptive reciter, edition and reader/player navigation.
+- [ ] Implement an `Adw.Application` with the canonical navigation, the persistent player bar and the reader.
 - [ ] Coordinate asynchronous state updates with the GLib main context.
 - [ ] Implement application-owned GStreamer playback through Gir.Core.
 - [ ] Export playback state and controls through MPRIS.
 - [ ] Use `HttpClient` with temporary files, validation, atomic replacement and resumable range requests only when the server supports them.
 - [ ] Register verified downloads with the shared core and reconcile them at launch.
-- [ ] Bundle or runtime-provide the Quran font and required GTK/libadwaita/GStreamer native libraries.
-- [ ] Render Quran content with correct RTL, keyboard navigation and Orca semantics.
-- [ ] Implement timed highlighting/plain fallback and all required product states.
+- [ ] Bundle or runtime-provide the required GTK/libadwaita/GStreamer native libraries.
+- [ ] Bind the library destinations to the shared durable store through the generated bindings.
+- [ ] Implement every required state from `PRODUCT.md` with keyboard and Orca support.
 - [ ] Produce and clean-install an x64 Flatpak.
 
 Acceptance: the full v1 journey passes from the Flatpak on a clean supported GNOME environment, including MPRIS and offline restart.
 
-### T7 — Cross-platform parity and release validation
+### T8 — Cross-platform parity and release validation
 
 Goal: prove that five separately native applications ship one product.
 
 Tasks:
 
 - [ ] Run the `PRODUCT.md` acceptance journey on all five installed applications.
-- [ ] Verify timed and untimed editions, unavailable surahs, retry, cancellation and stale-selection behavior.
+- [ ] Verify available and unavailable surahs, seeking, retry, cancellation and stale-selection behavior.
 - [ ] Verify download → quit → disable network → relaunch → play on every platform.
+- [ ] Verify that opening and closing the reader never disturbs playback on every platform.
+- [ ] Verify that history, collections, bookmarks and download records survive restart on every platform.
+- [ ] Verify that reported storage usage matches the bytes on disk after reconciliation.
 - [ ] Verify native media controls, interruption behavior and background rules on every platform.
 - [ ] Verify keyboard/pointer/touch behavior and the platform screen reader.
-- [ ] Verify Quran text, font, edition, checksum, license and notices in release artifacts.
+- [ ] Verify recording identity, bundled-content integrity, licenses and notices in release artifacts.
 - [ ] Verify that no secret or unsupported architecture is packaged.
 - [ ] Record explicit parity gaps; block v1 release on any gap in the v1 feature list.
 - [ ] Tag the pinned Kotlin/SKIE/NuGet/Gir.Core compatibility set used by the release.
