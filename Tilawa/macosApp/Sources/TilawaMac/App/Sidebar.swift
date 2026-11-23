@@ -5,9 +5,11 @@ import SwiftUI
 struct Sidebar: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var userLibrary: UserLibrary
+    @Environment(\.tilawaAccent) private var accent
     @State private var deleting: RecitationCollection?
 
     var body: some View {
+        let favorites = AppRouter.Destination.collection(userLibrary.favorites.id)
         List(selection: $router.destination) {
             Section("Library") {
                 Label("Home", systemImage: "house")
@@ -19,10 +21,14 @@ struct Sidebar: View {
             }
 
             Section {
-                // The sidebar tints the icon itself, white while the row is selected.
-                Label("Favorites", systemImage: "star.fill")
-                    .badge(userLibrary.favorites.items.count)
-                .tag(AppRouter.Destination.collection(userLibrary.favorites.id))
+                Label {
+                    Text("Favorites")
+                } icon: {
+                    Image(systemName: "star.fill")
+                        .foregroundStyle(router.destination == favorites ? Color.primary : accent)
+                }
+                .badge(userLibrary.favorites.items.count)
+                .tag(favorites)
 
                 if !userLibrary.userCollections.isEmpty {
                     // Favorites is pinned above the collections you order yourself.

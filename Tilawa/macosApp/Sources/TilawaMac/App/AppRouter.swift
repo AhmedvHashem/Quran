@@ -17,6 +17,13 @@ final class AppRouter: ObservableObject {
         case edition(RecitationEdition)
     }
 
+    struct EditionLink: Equatable {
+        let destination: Destination
+        let editionId: Int32
+        let chapterId: Int32
+        private let id = UUID()
+    }
+
     /// Names a new collection, optionally adding a recording to it, or renames one.
     struct Naming {
         var collectionId: String?
@@ -26,17 +33,34 @@ final class AppRouter: ObservableObject {
 
     @Published var destination: Destination? = .home
     @Published private var paths: [Destination: [Route]] = [:]
+    @Published private(set) var editionLink: EditionLink?
     @Published var naming: Naming?
 
     var current: Destination { destination ?? .home }
 
     /// The stack under the current destination; each destination keeps its own.
     var path: Binding<[Route]> {
-        Binding(get: { self.paths[self.current] ?? [] }, set: { self.paths[self.current] = $0 })
+        let destination = current
+        return Binding(get: { self.paths[destination] ?? [] }, set: { self.paths[destination] = $0 })
     }
 
     func open(_ route: Route) {
-        paths[current, default: []].append(route)
+        let stack = path.wrappedValue
+        if let index = stack.lastIndex(of: route) {
+            if index < stack.count - 1 { path.wrappedValue = Array(stack.prefix(through: index)) }
+        } else {
+            path.wrappedValue = stack + [route]
+        }
+    }
+
+    func openRecording(_ edition: RecitationEdition, chapterId: Int32? = nil) {
+        editionLink = chapterId.map { EditionLink(destination: current, editionId: edition.id, chapterId: $0) }
+        open(.edition(edition))
+    }
+
+    var backTitle: String {
+        if case .reciter(let reciter) = path.wrappedValue.dropLast().last { return reciter.shortName }
+        return "Back"
     }
 
     func newCollection(adding recording: SurahRecording? = nil) {

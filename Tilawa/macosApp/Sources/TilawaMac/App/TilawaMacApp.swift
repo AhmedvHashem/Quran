@@ -54,12 +54,21 @@ struct TilawaMacApp: App {
                     .keyboardShortcut("n", modifiers: .command)
             }
             CommandMenu("Playback") {
-                Button(playback.isPlaying ? "Pause" : "Play", action: playback.toggle)
+                Button(playback.isActive ? "Pause" : "Play", action: playback.toggle)
                     .disabled(nowPlaying.current == nil)
                 Button("Previous", action: playback.previous)
                     .keyboardShortcut(.leftArrow, modifiers: [.command])
                 Button("Next", action: playback.next)
                     .keyboardShortcut(.rightArrow, modifiers: [.command])
+                Divider()
+                Button("Go to Reciter") {
+                    if let item = nowPlaying.current { router.open(.reciter(item.reciter)) }
+                }
+                .disabled(nowPlaying.current == nil)
+                Button("Go to Recording") {
+                    if let item = nowPlaying.current { router.openRecording(item.edition, chapterId: item.chapter.id) }
+                }
+                .disabled(nowPlaying.current == nil)
             }
         }
     }
@@ -70,15 +79,15 @@ private struct RootView: View {
     @EnvironmentObject private var catalog: Catalog
     @EnvironmentObject private var userLibrary: UserLibrary
     @EnvironmentObject private var nowPlaying: NowPlaying
+    @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage(AppearanceChoice.key) private var appearance = AppearanceChoice.system
     @AppStorage(AccentChoice.key) private var accent = AccentChoice.system
 
     var body: some View {
         shell
-            .tint(Theme.accent)
-            // Rebuilds the views so every custom color picks up a new accent.
-            .id(accent)
+            .tint(accent.color)
+            .environment(\.tilawaAccent, accent.color)
             .preferredColorScheme(appearance.colorScheme)
             .task { await catalog.load() }
             .alert(namingTitle, isPresented: isNaming) {
@@ -112,7 +121,9 @@ private struct RootView: View {
             .environmentObject(catalog)
             .environmentObject(userLibrary)
             .environmentObject(nowPlaying)
-            .tint(Theme.accent)
+            .tint(accent.color)
+            .environment(\.tilawaAccent, accent.color)
+            .environment(\.colorScheme, appearance.colorScheme ?? colorScheme)
     }
 
     private var split: some View {
@@ -180,18 +191,21 @@ private struct FloatingPlayerBar<Content: View>: NSViewRepresentable {
     let content: Content
 
     final class Coordinator {
-        var bar: NSView?
+        var bar: NSHostingView<Content>?
+        var content: Content
+
+        init(content: Content) { self.content = content }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(content: content) }
 
     func makeNSView(context: Context) -> NSView {
         let anchor = WindowAnchor()
-        anchor.onWindow = { [coordinator = context.coordinator, content] window in
+        anchor.onWindow = { [coordinator = context.coordinator] window in
             guard coordinator.bar == nil,
                   let page = window.contentView,
                   let frame = page.superview else { return }
-            let bar = NSHostingView(rootView: content)
+            let bar = NSHostingView(rootView: coordinator.content)
             bar.translatesAutoresizingMaskIntoConstraints = false
             frame.addSubview(bar, positioned: .above, relativeTo: page)
             NSLayoutConstraint.activate([
@@ -205,7 +219,10 @@ private struct FloatingPlayerBar<Content: View>: NSViewRepresentable {
         return anchor
     }
 
-    func updateNSView(_ view: NSView, context: Context) {}
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.content = content
+        context.coordinator.bar?.rootView = content
+    }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
         coordinator.bar?.removeFromSuperview()

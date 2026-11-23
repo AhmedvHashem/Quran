@@ -5,13 +5,6 @@ import SwiftUI
 /// Tokens from the Claude Design canvas "Tilawa Desktop App - Design": the
 /// palette in PRODUCT.md and the dark values from the canvas's Appearance tweak.
 enum Theme {
-    /// The Settings accent: the system's by default (the design's #007AFF is
-    /// macOS's default), or the design's green or gold.
-    static var accent: Color { AccentChoice.current.color }
-    static var accentSoft: Color { accent.opacity(0.12) }
-    static var accentWash: Color { accent.opacity(0.10) }
-    static var accentGlow: Color { accent.opacity(0.35) }
-
     // Light and dark values from the design's Appearance tweak.
     static let content = Color(light: 0xFFFFFF, dark: 0x141416)
     static let card = Color(light: 0xFFFFFF, dark: 0x232326)
@@ -107,18 +100,25 @@ enum AccentChoice: String, CaseIterable {
 
     static let key = "accent"
 
-    static var current: AccentChoice {
-        UserDefaults.standard.string(forKey: key).flatMap(AccentChoice.init) ?? .system
-    }
-
     var title: String { rawValue.capitalized }
 
     var color: Color {
         switch self {
-        case .system: .accentColor
+        case .system: Color(nsColor: .controlAccentColor)
         case .green: Color(light: 0x1B7A5A, dark: 0x3FBF8F)
         case .gold: Color(light: 0x97762B, dark: 0xD8B463)
         }
+    }
+}
+
+private struct TilawaAccentKey: EnvironmentKey {
+    static var defaultValue: Color { AccentChoice.system.color }
+}
+
+extension EnvironmentValues {
+    var tilawaAccent: Color {
+        get { self[TilawaAccentKey.self] }
+        set { self[TilawaAccentKey.self] = newValue }
     }
 }
 
@@ -278,6 +278,7 @@ struct PillButton: View {
     let symbol: String?
     var isPrimary = false
     let action: () -> Void
+    @Environment(\.tilawaAccent) private var accent
 
     var body: some View {
         if #available(macOS 26, *) {
@@ -295,7 +296,7 @@ struct PillButton: View {
                     .frame(height: 30)
                     .background {
                         if isPrimary {
-                            Capsule().fill(Theme.accent).shadow(color: Theme.accentGlow, radius: 4, y: 2)
+                            Capsule().fill(accent).shadow(color: accent.opacity(0.35), radius: 4, y: 2)
                         } else {
                             Capsule().fill(Theme.card).overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
                                 .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
@@ -331,17 +332,18 @@ extension View {
 struct CapsuleTag: View {
     let title: String
     var symbol: String? = nil
+    @Environment(\.tilawaAccent) private var accent
 
     var body: some View {
         HStack(spacing: 5) {
             if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .semibold)) }
             Text(title).font(.system(size: 10, weight: .semibold).monospacedDigit())
         }
-        .foregroundStyle(Theme.accent)
+        .foregroundStyle(accent)
         .padding(.horizontal, 9)
         .frame(height: 24)
-        .background(Theme.accentSoft, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.accentGlow, lineWidth: 0.5))
+        .background(accent.opacity(0.12), in: Capsule())
+        .overlay(Capsule().strokeBorder(accent.opacity(0.35), lineWidth: 0.5))
     }
 }
 
@@ -349,18 +351,19 @@ struct CapsuleTag: View {
 struct Tag: View {
     let title: String
     var symbol: String? = nil
-    var tint: Color = Theme.accent
-    var fill: Color = Theme.accentSoft
+    var tint: Color? = nil
+    var fill: Color? = nil
+    @Environment(\.tilawaAccent) private var accent
 
     var body: some View {
         HStack(spacing: 3) {
             if let symbol { Image(systemName: symbol).font(.system(size: 8, weight: .semibold)) }
             Text(title).font(.system(size: 10, weight: .semibold))
         }
-        .foregroundStyle(tint)
+        .foregroundStyle(tint ?? accent)
         .padding(.horizontal, 5)
         .padding(.vertical, 1)
-        .background(fill, in: RoundedRectangle(cornerRadius: 4))
+        .background(fill ?? accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
@@ -384,15 +387,17 @@ struct SectionHeading: View {
 
 /// Three little bars marking the row that is playing.
 struct PlayingBars: View {
+    @Environment(\.tilawaAccent) private var accent
+
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach([6.0, 11, 8], id: \.self) { height in
                 RoundedRectangle(cornerRadius: 1).frame(width: 2, height: height)
             }
         }
-        .foregroundStyle(Theme.accent)
+        .foregroundStyle(accent)
         .frame(height: 12)
-        .accessibilityLabel("Playing")
+        .accessibilityLabel("Current surah")
     }
 }
 
@@ -400,12 +405,13 @@ struct PlayingBars: View {
 struct ProgressTrack: View {
     let fraction: Double
     var height: CGFloat = 3
+    @Environment(\.tilawaAccent) private var accent
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.segment)
-                Capsule().fill(Theme.accent).frame(width: geo.size.width * min(max(fraction, 0), 1))
+                Capsule().fill(accent).frame(width: geo.size.width * min(max(fraction, 0), 1))
             }
         }
         .frame(height: height)

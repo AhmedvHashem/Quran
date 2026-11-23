@@ -22,7 +22,7 @@ Version 1 is not a general Islamic platform, social network, tafsir suite or acc
 
 ### Current focus
 
-- Build the six canonical screens and the persistent player bar as one connected library.
+- Build the six canonical library screens and the persistent player bar as one connected library, with General settings for appearance.
 - Prioritize playback lifecycle, native system controls and continuous surah navigation.
 - Keep the bundled Quran text for ayah counts and timing validation only; it is not displayed in version 1.
 - Defer the reader, downloads, fixed-page Mushaf rendering, word-level timing, translations and tafsir.
@@ -99,9 +99,11 @@ The normal first-use flow is:
 
 Back navigation follows the listening chain in reverse; Home and Reciters each keep their own chain. The sidebar reaches any library destination directly. Playback continues until the user stops it or the queue ends.
 
+Reciter names open the reciter page. Recording names open the edition, and surah links in the player bar, history and collections open the edition at the named surah. Track menus offer Go to Reciter and Go to Recording. Back returns to the source page.
+
 ## Canonical screens
 
-Version 1 has six screens and one persistent component. Every screen carries the sidebar and the player bar.
+Version 1 has six library screens and one persistent component. Every library screen carries the sidebar and the player bar. macOS opens Settings in a separate window.
 
 ### Persistent player bar
 
@@ -186,13 +188,14 @@ Content:
 - Hero with the style name in English and Arabic, and a metadata line: reciter, riwayah, surah count and ayah count.
 - Actions: play all and shuffle.
 - A timing badge when ayah timing is verified for the edition.
-- A surah list in muṣḥaf order with columns for index, surah and length.
-- Each row shows the Arabic-Indic number, English name, Arabic name and ayah count, and marks the playing surah.
+- A surah list in muṣḥaf order with a play/pause control, the English and Arabic names, and the ayah count. Each row marks the current surah.
 - Loading, empty, unavailable and retry states.
 
 Duration and bitrate are not shown: the provider does not publish them, and Tilawa does not invent them.
 
 Phones use a native list instead of a table. The same columns become a row with secondary text.
+
+On macOS, single-click a surah row to select it, double-click to play it, or use its play/pause control directly. History and collection rows use the same interaction. Names that link to other pages remain independently clickable.
 
 ### 5. Recently Played
 
@@ -203,7 +206,7 @@ Content:
 - Title, a history search field and a clear-history action.
 - A "Continue listening" card with the surah, reciter, style, riwayah, the stopped ayah position, the remaining time and a resume action.
 - A history list with a session count, grouped by day: today, yesterday, then earlier periods.
-- Each row shows the Arabic-Indic surah number, surah name, reciter, riwayah, a heard percentage and a timestamp.
+- Each row shows a play/pause control, surah name, reciter, recording style, riwayah, a heard percentage and a timestamp.
 - A per-row remove action.
 
 History is one flat list, newest first. It has no completion filters.
@@ -220,7 +223,13 @@ Content:
 - Hero with a collection kicker, the name and a metadata line: item count, reciter count and, for user collections, the last update.
 - Items join a collection from any surah row's actions menu: Add to Favorites, or Add to Collection with a New Collection choice.
 - Actions: play all, shuffle, and, for a user collection, edit (rename or delete).
-- A recitations list with columns for surah, reciter and, in Favorites, the added date. Favorites lists newest first. A user collection keeps its manual order, shows an index column and reorders by dragging or with Move Up and Move Down.
+- A recitations list with a play/pause control and columns for surah, reciter and, in Favorites, the added date. Favorites lists newest first. A user collection keeps its manual order and reorders by dragging or with Move Up and Move Down.
+
+### General settings
+
+- Appearance offers System, Light and Dark.
+- Accent offers System, Green and Gold, using the design's Tweaks palette for the custom colors.
+- Both preferences default to System, apply immediately and persist across launches. On macOS, open Settings from the Tilawa menu or press ⌘,.
 
 ## Visual identity
 
@@ -309,7 +318,7 @@ The canonical macOS direction is the Claude Design project [Tilawa macOS design 
 | Downloads | Storage budget and transfers |
 | Collections | Favorites, one user collection |
 
-The Reader, Reader focus mode, Downloads and Settings frames, the āyah-bookmark section of Favorites and every offline column are out of version 1 scope since 2026-11-23. They stay on the canvas as later-feature reference.
+The Reader, Reader focus mode, Downloads, Settings — Audio, Settings — Reading, the āyah-bookmark section of Favorites and every offline column are later-feature references. General settings uses the Appearance and Accent options from Tweaks.
 
 The macOS implementation is the living behavioral reference. This product document wins when a mockup conflicts with an accepted product decision.
 
@@ -482,7 +491,7 @@ Add these only after the complete v1 flow is reliable on all supported platforms
 - Additional audio and timing providers.
 - A Quran Foundation backend/token broker if provider limitations justify operating it.
 - Cross-device synchronization and accounts only when they solve a demonstrated user need.
-- Dark appearance after its Quran colors, imagery and contrast have been designed and verified.
+- Dark appearance for the read-along Quran surface.
 
 ## Explicitly outside version 1
 
@@ -589,9 +598,9 @@ P5 (reader) and P9 (downloads) are deferred to Later features since 2026-11-23; 
 
 ### P0 — Lock the v1 product contract
 
-Status: reopened on 2026-09-22 by the accepted redesign. Every content decision below still stands. The interaction contract now has to cover eight screens, the persistent player bar and the library destinations, so the open items at the end of this section block P3 and later.
+Status: reopened on 2026-09-22 by the accepted redesign. Every content decision below still stands. The interaction contract covers the library screens, persistent player bar and General settings.
 
-Outcome: implementation teams have one unambiguous eight-screen product to build.
+Outcome: implementation teams share one product contract.
 
 Tasks:
 
@@ -935,7 +944,7 @@ Release is blocked by any of the following:
 
 ## Later-feature freeze
 
-Repeat modes, verified seamless surah transitions, Quran text search, copy and share, fixed-page Mushaf rendering, word-level timing, translations, tafsir, additional providers, dark appearance, accounts and synchronization remain in the later backlog until P11 and T8 pass. Their models, controls and infrastructure are not created during v1 unless required to remove a correctness or data-loss risk.
+Repeat modes, verified seamless surah transitions, Quran text search, copy and share, fixed-page Mushaf rendering, word-level timing, translations, tafsir, additional providers, accounts and synchronization remain in the later backlog until P11 and T8 pass. Their models, controls and infrastructure are not created during v1 unless required to remove a correctness or data-loss risk.
 
 Favorites, bookmarks, history, saved progress, shuffle, search and the downloads manager left this freeze on 2026-09-22. The accepted redesign makes them version 1 scope.
 

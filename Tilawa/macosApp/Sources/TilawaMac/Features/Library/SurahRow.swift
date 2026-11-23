@@ -20,8 +20,7 @@ struct SurahRow<Detail: View, Actions: View>: View {
     @ViewBuilder let actions: Actions
 
     @EnvironmentObject private var nowPlaying: NowPlaying
-    @EnvironmentObject private var catalog: Catalog
-    @EnvironmentObject private var router: AppRouter
+    @Environment(\.tilawaAccent) private var accent
     @State private var isHovered = false
 
     var body: some View {
@@ -30,26 +29,14 @@ struct SurahRow<Detail: View, Actions: View>: View {
             if showsDragHandle { DragHandle() }
             FavoriteButton(recording: recording, name: chapter.name)
             RowPlayButton(player: nowPlaying.player, isCurrent: isCurrent, name: chapter.name) {
+                select()
                 isCurrent ? nowPlaying.togglePlay() : play()
             }
             .disabled(!isAvailable)
-            NumberTile(number: chapter.id)
-            HStack(spacing: 8) {
-                if linksToRecording, let edition = catalog.edition(recording.editionId) {
-                    NameLink(title: chapter.name) { router.open(.edition(edition)) }
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isCurrent ? Theme.accent : .primary)
-                } else {
-                    Text(chapter.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isCurrent ? Theme.accent : .primary)
-                }
-                Text(chapter.arabicName)
-                    .arabic(14)
-                    .foregroundStyle(Theme.labelSecondary)
-            }
-            .lineLimit(1)
-            .frame(width: 250, alignment: .leading)
+            SurahTitle(title: chapter.name, arabic: chapter.arabicName, recording: linksToRecording ? recording : nil)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isCurrent ? accent : .primary)
+                .frame(width: 250, alignment: .leading)
             detail.frame(maxWidth: .infinity, alignment: .leading)
             if isCurrent { PlayingBars() }
 
@@ -68,20 +55,22 @@ struct SurahRow<Detail: View, Actions: View>: View {
         .background(rowBackground)
         .overlay(alignment: .bottom) { Theme.hairline.frame(height: 0.5) }
         .opacity(isAvailable ? 1 : 0.5)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) { if isAvailable { play() } }
-        .simultaneousGesture(TapGesture().onEnded(select))
+        .surahRowClicks(select: select, play: isAvailable ? play : nil)
         .onHover { isHovered = $0 }
         .contextMenu { actions }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(chapter.name), \(chapter.arabicName)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityAction(named: "Play") { if isAvailable { play() } }
+        .accessibilityAction(named: "Play") {
+            guard isAvailable else { return }
+            select()
+            play()
+        }
     }
 
     private var rowBackground: Color {
-        if isSelected { return Theme.accent.opacity(0.2) }
-        if isCurrent { return Theme.accentWash }
+        if isSelected { return accent.opacity(0.2) }
+        if isCurrent { return accent.opacity(0.10) }
         return isHovered ? Theme.segment : .clear
     }
 }
@@ -89,41 +78,80 @@ struct SurahRow<Detail: View, Actions: View>: View {
 /// The play/pause button where a surah list used to show its number.
 struct RowPlayButton: View {
     @ObservedObject var player: PlaybackController
+    @Environment(\.tilawaAccent) private var accent
     let isCurrent: Bool
     let name: String
     let action: () -> Void
 
     var body: some View {
-        let isPlaying = isCurrent && player.isPlaying
+        let canPause = isCurrent && player.isActive
         Button(action: action) {
-            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            Image(systemName: canPause ? "pause.fill" : "play.fill")
                 .font(.system(size: 10))
-                .foregroundStyle(isCurrent ? Theme.accent : Theme.labelSecondary)
+                .foregroundStyle(isCurrent ? accent : Theme.labelSecondary)
                 .frame(width: 26, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(isPlaying ? "Pause" : "Play")
-        .accessibilityLabel(isPlaying ? "Pause \(name)" : "Play \(name)")
+        .help(canPause ? "Pause" : "Play")
+        .accessibilityLabel(canPause ? "Pause \(name)" : "Play \(name)")
     }
 }
 
 /// A name that opens its page when clicked and underlines on hover, like the
 /// artist and album names in Music.
-struct NameLink: View {
-    let title: String
+struct NameLink<Label: View>: View {
     let action: () -> Void
+    @ViewBuilder let label: (Bool) -> Label
 
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Text(title).underline(isHovered)
+            label(isHovered)
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .linkPointer()
         .accessibilityAddTraits(.isLink)
+    }
+}
+
+extension NameLink where Label == Text {
+    init(title: String, action: @escaping () -> Void) {
+        self.init(action: action) { Text(title).underline($0) }
+    }
+}
+
+struct SurahTitle: View {
+    let title: String
+    var arabic: String? = nil
+    var recording: SurahRecording? = nil
+    var arabicSize: CGFloat = 14
+
+    @EnvironmentObject private var catalog: Catalog
+    @EnvironmentObject private var router: AppRouter
+
+    var body: some View {
+        Group {
+            if let recording, let edition = catalog.edition(recording.editionId) {
+                NameLink(action: { router.openRecording(edition, chapterId: recording.chapterId) }) { label(underlined: $0) }
+                    .accessibilityLabel(title)
+                    .accessibilityHint("Show this surah in its recording")
+            } else {
+                label(underlined: false)
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func label(underlined: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(title).underline(underlined)
+            if let arabic {
+                Text(arabic).underline(underlined).arabic(arabicSize).foregroundStyle(Theme.labelSecondary)
+            }
+        }
     }
 }
 
@@ -144,7 +172,8 @@ struct RecordingByline: View {
             }
             Text(" · ")
             if let edition = catalog.edition(recording.editionId) {
-                NameLink(title: recording.style) { router.open(.edition(edition)) }
+                NameLink(title: edition.style) { router.openRecording(edition) }
+                    .layoutPriority(1)
             } else {
                 Text(recording.style)
             }
@@ -155,6 +184,15 @@ struct RecordingByline: View {
 }
 
 extension View {
+    func surahRowClicks(select: @escaping () -> Void, play: (() -> Void)?) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                select()
+                play?()
+            }
+            .simultaneousGesture(TapGesture().onEnded(select))
+    }
+
     /// The pointing-hand cursor over a link, where macOS offers it.
     @ViewBuilder
     func linkPointer() -> some View {
@@ -169,6 +207,7 @@ struct FavoriteButton: View {
     let name: String
 
     @EnvironmentObject private var userLibrary: UserLibrary
+    @Environment(\.tilawaAccent) private var accent
 
     var body: some View {
         let isFavorite = userLibrary.isFavorite(recording)
@@ -177,7 +216,7 @@ struct FavoriteButton: View {
         } label: {
             Image(systemName: isFavorite ? "heart.fill" : "heart")
                 .font(.system(size: 11))
-                .foregroundStyle(isFavorite ? Theme.accent : Theme.labelTertiary)
+                .foregroundStyle(isFavorite ? accent : Theme.labelTertiary)
                 .frame(width: 14, height: 28)
                 .contentShape(Rectangle())
         }
@@ -239,8 +278,6 @@ struct RecordingActions: View {
     let recording: SurahRecording
     /// The collection this row belongs to, which offers removal from it.
     var collectionId: String? = nil
-    /// Off on the recording's own page, where it would lead back to itself.
-    var showsGoToRecording = true
     let play: (() -> Void)?
 
     @EnvironmentObject private var userLibrary: UserLibrary
@@ -248,14 +285,18 @@ struct RecordingActions: View {
     @EnvironmentObject private var catalog: Catalog
 
     var body: some View {
+        let reciter = catalog.reciter(recording.reciterId)
+        let edition = catalog.edition(recording.editionId)
         Button("Play") { play?() }.disabled(play == nil)
         Divider()
-        if let reciter = catalog.reciter(recording.reciterId) {
-            Button("Go to Reciter") { router.open(.reciter(reciter)) }
+        Button("Go to Reciter") {
+            if let reciter { router.open(.reciter(reciter)) }
         }
-        if showsGoToRecording, let edition = catalog.edition(recording.editionId) {
-            Button("Go to Recording") { router.open(.edition(edition)) }
+        .disabled(reciter == nil)
+        Button("Go to Recording") {
+            if let edition { router.openRecording(edition, chapterId: recording.chapterId) }
         }
+        .disabled(edition == nil)
         Divider()
         Button(userLibrary.isFavorite(recording) ? "Remove from Favorites" : "Add to Favorites") {
             userLibrary.toggleFavorite(recording)

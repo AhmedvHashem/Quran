@@ -100,7 +100,7 @@ struct ReciterDetailView: View {
             VStack(spacing: 0) {
                 ForEach(Array(editions.enumerated()), id: \.element.id) { offset, edition in
                     if offset > 0 { Theme.hairline.frame(height: 0.5).padding(.leading, 16) }
-                    EditionRow(edition: edition) { router.open(.edition(edition)) }
+                    EditionRow(edition: edition) { router.openRecording(edition) }
                 }
             }
             .card()

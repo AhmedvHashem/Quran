@@ -6,7 +6,7 @@ import SwiftUI
 struct PlayerBar: View {
     @ObservedObject var nowPlaying: NowPlaying
     @ObservedObject private var player: PlaybackController
-    @EnvironmentObject private var router: AppRouter
+    @Environment(\.tilawaAccent) private var accent
 
     init(nowPlaying: NowPlaying) {
         self.nowPlaying = nowPlaying
@@ -51,8 +51,11 @@ struct PlayerBar: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 if let item = nowPlaying.current {
-                    NameLink(title: item.chapter.name) { router.open(.edition(item.edition)) }
+                    SurahTitle(title: item.chapter.name, recording: item.recording)
                         .font(.system(size: 13, weight: .semibold))
+                    RecordingByline(recording: item.recording)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.labelSecondary)
                 } else {
                     Text("Not Playing")
                         .font(.system(size: 13, weight: .semibold))
@@ -60,17 +63,18 @@ struct PlayerBar: View {
                 }
                 if let error = nowPlaying.errorMessage {
                     Text(error).font(.system(size: 11)).foregroundStyle(.red)
-                } else if let item = nowPlaying.current {
-                    RecordingByline(recording: item.recording)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.labelSecondary)
-                } else {
+                } else if isEmpty {
                     Text("Choose a reciter to start listening")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.labelSecondary)
                 }
             }
             .lineLimit(1)
+        }
+        .contextMenu {
+            if let item = nowPlaying.current {
+                RecordingActions(recording: item.recording, play: player.play)
+            }
         }
     }
 
@@ -79,8 +83,8 @@ struct PlayerBar: View {
             transportButton("backward.end.fill", label: "Previous ayah or surah", action: nowPlaying.previous)
 
             playButton
-                .help(player.isPlaying ? "Pause" : "Play")
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                .help(player.isActive ? "Pause" : "Play")
+                .accessibilityLabel(player.isActive ? "Pause" : "Play")
 
             transportButton("forward.end.fill", label: "Next ayah or surah", action: nowPlaying.next)
         }
@@ -108,8 +112,8 @@ struct PlayerBar: View {
             Button(action: nowPlaying.togglePlay) {
                 glyph
                     .frame(width: 40, height: 40)
-                    .background(Theme.accent, in: Circle())
-                    .shadow(color: Theme.accentGlow, radius: 4, y: 2)
+                    .background(accent, in: Circle())
+                    .shadow(color: accent.opacity(0.35), radius: 4, y: 2)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -181,13 +185,14 @@ private struct SeekBar: View {
     let progress: Double
     let markers: [Double]
     let onScrub: (Double) -> Void
+    @Environment(\.tilawaAccent) private var accent
 
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.segment).frame(height: 4)
-                Capsule().fill(Theme.accent).frame(width: width * progress, height: 4)
+                Capsule().fill(accent).frame(width: width * progress, height: 4)
                 if markers.count < 120 {
                     ForEach(markers, id: \.self) { marker in
                         RoundedRectangle(cornerRadius: 1)

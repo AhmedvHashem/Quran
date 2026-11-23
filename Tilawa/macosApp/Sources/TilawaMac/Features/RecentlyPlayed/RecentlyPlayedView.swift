@@ -9,7 +9,6 @@ struct RecentlyPlayedView: View {
     @State private var query = ""
     @State private var isConfirmingClear = false
     @State private var selection: SurahRecording?
-    @EnvironmentObject private var router: AppRouter
 
     var body: some View {
         let sessions = userLibrary.sessions.filter(matches)
@@ -62,17 +61,11 @@ struct RecentlyPlayedView: View {
             NumberTile(number: recording.chapterId, size: 72, fontSize: 30, radius: 10)
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Group {
-                        if let chapter, let edition = catalog.edition(recording.editionId) {
-                            NameLink(title: chapter.name) { router.open(.edition(edition)) }
-                        } else {
-                            Text(chapter?.name ?? "Surah \(recording.chapterId)")
-                        }
-                    }
+                    SurahTitle(
+                        title: chapter?.name ?? "Surah \(recording.chapterId)",
+                        arabic: chapter?.arabicName, recording: recording, arabicSize: 15
+                    )
                     .font(.system(size: 16, weight: .semibold))
-                    if let chapter {
-                        Text(chapter.arabicName).arabic(15).foregroundStyle(Theme.labelSecondary)
-                    }
                     if isTimed { Tag(title: "Sync", symbol: "waveform") }
                 }
                 RecordingByline(recording: recording, showsRiwayah: true)
@@ -214,69 +207,48 @@ private struct HistoryRow: View {
     let resume: () -> Void
     let remove: () -> Void
 
-    @EnvironmentObject private var catalog: Catalog
-    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var nowPlaying: NowPlaying
+    @Environment(\.tilawaAccent) private var accent
     @State private var isHovered = false
 
     var body: some View {
+        let title = chapter?.name ?? "Surah \(session.recording.chapterId)"
         HStack(spacing: 11) {
-            FavoriteButton(recording: session.recording, name: chapter?.name ?? "this surah")
+            FavoriteButton(recording: session.recording, name: title)
+            RowPlayButton(player: nowPlaying.player, isCurrent: isCurrent, name: title) {
+                select()
+                isCurrent ? nowPlaying.togglePlay() : resume()
+            }
+            .disabled(!isAvailable)
             HStack(spacing: 11) {
-                    NumberTile(number: session.recording.chapterId, size: 30, fontSize: 14)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Group {
-                            if let chapter, let edition = catalog.edition(session.recording.editionId) {
-                                NameLink(title: chapter.name) { router.open(.edition(edition)) }
-                            } else {
-                                Text(chapter?.name ?? "Surah \(session.recording.chapterId)")
-                            }
-                        }
+                VStack(alignment: .leading, spacing: 2) {
+                    SurahTitle(title: title, recording: session.recording)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isCurrent ? Theme.accent : .primary)
-                        Group {
-                            if let reciter = catalog.reciter(session.recording.reciterId) {
-                                NameLink(title: reciterName) { router.open(.reciter(reciter)) }
-                            } else {
-                                Text(reciterName)
-                            }
-                        }
+                        .foregroundStyle(isCurrent ? accent : .primary)
+                    RecordingByline(recording: session.recording)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.labelSecondary)
-                    }
-                    .lineLimit(1)
-                    .frame(width: 214, alignment: .leading)
-                    Text(isAvailable ? session.recording.riwayahShortName : "Unavailable")
-                        .font(.system(size: 11))
+                }
+                .frame(width: 250, alignment: .leading)
+                Text(isAvailable ? session.recording.riwayahShortName : "Unavailable")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.labelSecondary)
+                    .frame(width: 96, alignment: .leading)
+                HStack(spacing: 9) {
+                    ProgressTrack(fraction: session.heardFraction)
+                    Text("\(Int((session.heardFraction * 100).rounded()))% heard")
+                        .font(.system(size: 10).monospacedDigit())
                         .foregroundStyle(Theme.labelSecondary)
-                        .frame(width: 96, alignment: .leading)
-                    HStack(spacing: 9) {
-                        ProgressTrack(fraction: session.heardFraction)
-                        Text("\(Int((session.heardFraction * 100).rounded()))% heard")
-                            .font(.system(size: 10).monospacedDigit())
-                            .foregroundStyle(Theme.labelSecondary)
-                            .frame(width: 62, alignment: .leading)
-                    }
-                    Text(timeLabel)
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(Theme.labelSecondary)
-                        .frame(width: 76, alignment: .trailing)
+                        .frame(width: 62, alignment: .leading)
+                }
+                Text(timeLabel)
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(Theme.labelSecondary)
+                    .frame(width: 76, alignment: .trailing)
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(chapter?.name ?? "Surah"), \(reciterName)")
             .accessibilityValue("\(Int(session.heardFraction * 100)) percent heard, \(timeLabel)")
-
-            // The design puts play and remove on the row; everything else is in its context menu.
-            Button(action: resume) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Theme.labelSecondary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!isAvailable)
-            .help("Resume")
-            .accessibilityLabel("Resume \(chapter?.name ?? "surah")")
 
             Button(action: remove) {
                 Image(systemName: "xmark")
@@ -292,15 +264,13 @@ private struct HistoryRow: View {
         .padding(.horizontal, 10)
         .frame(height: 46)
         .background(
-            isSelected ? Theme.accent.opacity(0.2) : isHovered ? Theme.segment : .clear,
+            isSelected ? accent.opacity(0.2) : isHovered ? Theme.segment : .clear,
             in: RoundedRectangle(cornerRadius: 8)
         )
-        .contentShape(Rectangle())
-        // A click selects; a double-click resumes, like the surah lists.
-        .onTapGesture(count: 2) { if isAvailable { resume() } }
-        .simultaneousGesture(TapGesture().onEnded(select))
+        .surahRowClicks(select: select, play: isAvailable ? resume : nil)
         .onHover { isHovered = $0 }
         .contextMenu { actions }
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: "Resume") { if isAvailable { resume() } }
     }

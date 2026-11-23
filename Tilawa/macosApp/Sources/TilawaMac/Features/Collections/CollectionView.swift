@@ -10,6 +10,7 @@ struct CollectionView: View {
     @EnvironmentObject private var catalog: Catalog
     @EnvironmentObject private var nowPlaying: NowPlaying
     @EnvironmentObject private var router: AppRouter
+    @Environment(\.tilawaAccent) private var accent
     @State private var query = ""
     @State private var isConfirmingDelete = false
     @State private var selection: SurahRecording?
@@ -83,8 +84,8 @@ struct CollectionView: View {
     private func hero(_ collection: RecitationCollection, playable: [QueueItem]) -> some View {
         HStack(alignment: .bottom, spacing: 20) {
             if collection.isFavorites {
-                OrnamentTile(surface: Theme.accentWash, ink: Theme.accent) {
-                    Image(systemName: "heart.fill").font(.system(size: 44)).foregroundStyle(Theme.accent)
+                OrnamentTile(surface: accent.opacity(0.10), ink: accent) {
+                    Image(systemName: "heart.fill").font(.system(size: 44)).foregroundStyle(accent)
                 }
             } else {
                 OrnamentTile {
@@ -133,10 +134,9 @@ struct CollectionView: View {
         let isManual = !collection.isFavorites
         return VStack(spacing: 0) {
             ColumnHeader {
-                if isManual { Color.clear.frame(width: 14, height: 1) }
+                if isManual && query.isEmpty { Color.clear.frame(width: 14, height: 1) }
                 Color.clear.frame(width: 14, height: 1)
                 Color.clear.frame(width: 26, height: 1)
-                Color.clear.frame(width: 28, height: 1)
                 Text("Surah").frame(width: 250, alignment: .leading)
                 Text("Reciter").frame(maxWidth: .infinity, alignment: .leading)
                 if !isManual { Text("Added").frame(width: 90, alignment: .trailing) }
@@ -161,12 +161,9 @@ struct CollectionView: View {
                         play: play
                     ) {
                         HStack {
-                            Group {
-                                if item == nil {
-                                    Text("Unavailable · \(catalog.reciterName(of: entry.recording))")
-                                } else {
-                                    RecordingByline(recording: entry.recording)
-                                }
+                            HStack(spacing: 0) {
+                                if item == nil { Text("Unavailable · ") }
+                                RecordingByline(recording: entry.recording)
                             }
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.labelSecondary)

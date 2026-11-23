@@ -7,15 +7,46 @@ struct EditionView: View {
 
     @EnvironmentObject private var catalog: Catalog
     @EnvironmentObject private var nowPlaying: NowPlaying
+    @EnvironmentObject private var router: AppRouter
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var selection: SurahRecording?
-    @EnvironmentObject private var router: AppRouter
+    @State private var selectedChapter: Int32?
 
     var body: some View {
         let queue = catalog.queue(edition)
         let shown = queue.indices.filter { matches(queue[$0].chapter) }
 
+        ScrollViewReader { scroll in
+            scrollContent(queue, shown: shown)
+                .task(id: router.editionLink) {
+                    guard let link = router.editionLink, link.destination == router.current, link.editionId == edition.id,
+                          let chapter = queue.first(where: { $0.chapter.id == link.chapterId })?.chapter else { return }
+                    selectedChapter = chapter.id
+                    if !matches(chapter) {
+                        query = ""
+                        await Task.yield()
+                    }
+                    guard !Task.isCancelled else { return }
+                    scroll.scrollTo(chapter.id, anchor: .center)
+                }
+        }
+        .navigationTitle("\(edition.style) · \(edition.riwayahShortName)")
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button(action: { dismiss() }) {
+                    Label(router.backTitle, systemImage: "chevron.left")
+                        .labelStyle(.titleAndIcon)
+                }
+                .keyboardShortcut("[", modifiers: .command)
+                .help("Go Back")
+                .accessibilityLabel("Go Back")
+            }
+        }
+        .searchable(text: $query, placement: .toolbar, prompt: "Find surah")
+    }
+
+    private func scrollContent(_ queue: [QueueItem], shown: [Int]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 hero(queue)
@@ -23,7 +54,6 @@ struct EditionView: View {
                     ColumnHeader {
                         Color.clear.frame(width: 14, height: 1)
                         Color.clear.frame(width: 26, height: 1)
-                        Color.clear.frame(width: 28, height: 1)
                         Text("Surah").frame(width: 250, alignment: .leading)
                         Text("Length").frame(maxWidth: .infinity, alignment: .leading)
                         Color.clear.frame(width: 28, height: 1)
@@ -42,16 +72,17 @@ struct EditionView: View {
                                 recording: item.recording,
                                 chapter: item.chapter,
                                 isCurrent: nowPlaying.isCurrent(item.recording),
-                                isSelected: selection == item.recording,
-                                select: { selection = item.recording },
+                                isSelected: selectedChapter == item.chapter.id,
+                                select: { selectedChapter = item.chapter.id },
                                 play: play
                             ) {
                                 Text("\(item.chapter.versesCount) āyāt")
                                     .font(.system(size: 11.5).monospacedDigit())
                                     .foregroundStyle(Theme.labelSecondary)
                             } actions: {
-                                RecordingActions(recording: item.recording, showsGoToRecording: false, play: play)
+                                RecordingActions(recording: item.recording, play: play)
                             }
+                            .id(item.chapter.id)
                         }
                     }
                 }
@@ -61,21 +92,6 @@ struct EditionView: View {
             .padding(.top, 26)
             .padding(.bottom, 32)
         }
-        .navigationTitle("\(edition.style) · \(edition.riwayahShortName)")
-        // The design names where Back goes: "‹ Al-Husary", not a bare chevron.
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: { dismiss() }) {
-                    Label(catalog.reciter(edition.reciterId)?.shortName ?? "Back", systemImage: "chevron.left")
-                        .labelStyle(.titleAndIcon)
-                }
-                .keyboardShortcut("[", modifiers: .command)
-                .help("Back to \(catalog.reciter(edition.reciterId)?.name ?? "the reciter")")
-                .accessibilityLabel("Back to \(catalog.reciter(edition.reciterId)?.name ?? "the reciter")")
-            }
-        }
-        .searchable(text: $query, placement: .toolbar, prompt: "Find surah")
     }
 
     private func hero(_ queue: [QueueItem]) -> some View {

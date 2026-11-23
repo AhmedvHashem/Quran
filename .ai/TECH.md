@@ -571,7 +571,8 @@ Status: active. The redesign landed on 2026-11-23.
 - `Catalog` loads reciters, every edition and the chapters once for the app. `UserLibrary` republishes the shared history and collections. `NowPlaying` owns the queue: play all, shuffle, continue to the next surah and resume at a stored position.
 - Sessions save on pause, on the end of a surah, before switching surahs, every 10 seconds of playback and on quit.
 - Space toggles playback through a key monitor that ignores text input; a bare-Space menu shortcut would swallow spaces in search and name fields.
-- Custom controls follow the system accent color; #007AFF is its default.
+- General settings persists appearance and accent in macOS preferences. The chosen accent updates app controls and the floating player bar in place. macOS supplies the native sidebar selection color.
+- Reciter and recording links and single-click selection with double-click playback are implemented on macOS. Other platform shells will adopt the corresponding navigation, playback controls and settings in T4–T7.
 - The edition screen replaces the system back chevron with the design's labelled capsule ("‹ Al-Husary", ⌘[), using `Reciter.shortName`. Arabic letters and numbers in tiles are centred on their drawn shape (`ArabicGlyph`), since Amiri Quran's tall ascent sits a plainly centred glyph low.
 - The shared core shows formal riwayah transliterations by MP3Quran riwayah id and the editorial English names of the featured seed. Saved history and collection items show the catalog's current reciter name, falling back to their snapshot.
 - Rendered design references: the canvas boards render offline by inlining their theme variables and running headless Chrome; compared screen by screen on 2026-11-23.

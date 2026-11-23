@@ -28,7 +28,7 @@ final class PlaybackController: ObservableObject {
     @Published var volume: Float = 1 { didSet { player.volume = volume } }
 
     var isPlaying: Bool { state == .playing }
-    private var isActive: Bool { state == .playing || state == .buffering }
+    var isActive: Bool { state == .playing || state == .buffering }
     var onFinish: (() -> Void)?
     var onNext: (() -> Void)?
     var onPrevious: (() -> Void)?
