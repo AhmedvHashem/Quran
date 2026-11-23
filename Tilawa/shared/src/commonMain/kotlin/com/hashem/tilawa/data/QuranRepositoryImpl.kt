@@ -38,6 +38,48 @@ internal class QuranRepositoryImpl(
         private const val PROVIDER = "mp3quran.net"
         private val FEATURED_RECITER_ORDER = listOf(123, 54, 31, 118, 112, 51, 30, 74, 102, 92)
         private val FEATURED_EDITION_IDS = setOf(123, 54, 31, 118, 112, 51, 30, 74, 102, 92)
+
+        /** Editorial English names for the featured seed; provider transliterations vary (PRODUCT.md). */
+        private val FEATURED_NAMES = mapOf(
+            123 to "Mishary Rashid Alafasy",
+            54 to "Abdur-Rahman As-Sudais",
+            31 to "Saud Ash-Shuraym",
+            118 to "Mahmoud Khalil Al-Husary",
+            112 to "Mohamed Siddiq Al-Minshawi",
+            51 to "Abdul Basit Abdul Samad",
+            30 to "Saad Al-Ghamdi",
+            74 to "Ali Al-Huthaify",
+            102 to "Maher Al Muaiqly",
+            92 to "Yasser Al-Dosari",
+        )
+
+        /** Formal transliterations for MP3Quran riwayah ids; unknown ids keep the provider's name. */
+        private val RIWAYAH_NAMES = mapOf(
+            1 to "Ḥafṣ ʿan ʿĀṣim",
+            2 to "Warsh ʿan Nāfiʿ",
+            3 to "Khalaf ʿan Ḥamzah",
+            4 to "Al-Bazzī ʿan Ibn Kathīr",
+            5 to "Qālūn ʿan Nāfiʿ",
+            6 to "Qunbul ʿan Ibn Kathīr",
+            7 to "Al-Sūsī ʿan Abī ʿAmr",
+            8 to "Qālūn ʿan Nāfiʿ, ṭarīq Abī Nashīṭ",
+            9 to "Ruways and Rawḥ ʿan Yaʿqūb al-Ḥaḍramī",
+            10 to "Warsh ʿan Nāfiʿ, ṭarīq al-Aṣbahānī",
+            11 to "Al-Bazzī and Qunbul ʿan Ibn Kathīr",
+            12 to "Al-Dūrī ʿan Al-Kisāʾī",
+            13 to "Al-Dūrī ʿan Abī ʿAmr",
+            15 to "Shuʿbah ʿan ʿĀṣim",
+            16 to "Ibn Dhakwān ʿan Ibn ʿĀmir",
+            18 to "Warsh ʿan Nāfiʿ, ṭarīq al-Azraq",
+            19 to "Hishām ʿan Ibn ʿĀmir",
+            20 to "Ibn Jammāz ʿan Abī Jaʿfar",
+        )
+
+        /** MP3Quran spells two recitation styles as muṣḥaf names; show the canonical term. */
+        private val PROVIDER_STYLES = mapOf(
+            "Almusshaf Al Mojawwad" to "Mujawwad",
+            "Almusshaf Al Mo'lim" to "Muʿallim",
+        )
     }
 
     override suspend fun reciters(): List<Reciter> {
@@ -46,7 +88,7 @@ internal class QuranRepositoryImpl(
         return english.sortedWith(compareBy {
             FEATURED_RECITER_ORDER.indexOf(it.id).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE
         }).map {
-            Reciter(it.id, it.name, arabicNames[it.id] ?: it.name)
+            Reciter(it.id, FEATURED_NAMES[it.id] ?: it.name, arabicNames[it.id] ?: it.name)
         }
     }
 
@@ -55,6 +97,14 @@ internal class QuranRepositoryImpl(
         val riwayat = loadRiwayat()
         val timedReads = loadTimedReads()
         return reciter.moshaf.map { it.toEdition(reciterId, riwayat, timedReads) }
+    }
+
+    override suspend fun allEditions(): List<RecitationEdition> {
+        val riwayat = loadRiwayat()
+        val timedReads = loadTimedReads()
+        return loadRecitersData().first.flatMap { reciter ->
+            reciter.moshaf.map { it.toEdition(reciter.id, riwayat, timedReads) }
+        }
     }
 
     override suspend fun chapters(): List<Chapter> = localTextSource.chapters()
@@ -175,13 +225,13 @@ internal class QuranRepositoryImpl(
         val canonicalName = moshaf.rewayaId?.let(riwayatMap::get)
         if (canonicalName != null) {
             val cleaned = cleanRiwayahName(canonicalName)
-            return Riwayah(moshaf.rewayaId, cleaned) to extractStyle(moshaf.name, canonicalName, cleaned)
+            return Riwayah(moshaf.rewayaId, displayName(moshaf.rewayaId, cleaned)) to extractStyle(moshaf.name, canonicalName, cleaned)
         }
 
         for ((id, name) in riwayatMap) {
             val cleaned = cleanRiwayahName(name)
             if (moshaf.name.contains(name, true) || moshaf.name.contains(cleaned, true)) {
-                return Riwayah(id, cleaned) to extractStyle(moshaf.name, name, cleaned)
+                return Riwayah(id, displayName(id, cleaned)) to extractStyle(moshaf.name, name, cleaned)
             }
         }
 
@@ -215,6 +265,8 @@ internal class QuranRepositoryImpl(
 
     private fun String.withTrailingSlash() = if (endsWith('/')) this else "$this/"
 
+    private fun displayName(id: Int, cleaned: String) = RIWAYAH_NAMES[id] ?: cleaned
+
     private fun cleanRiwayahName(rawName: String) =
         rawName.replace(Regex("^Rewayat\\s+", RegexOption.IGNORE_CASE), "").trim()
 
@@ -225,4 +277,5 @@ internal class QuranRepositoryImpl(
             .replace(Regex("^Rewayat\\s+", RegexOption.IGNORE_CASE), "")
             .trim().trim('-', '/', '–').trim()
             .ifBlank { "Murattal" }
+            .let { PROVIDER_STYLES[it] ?: it }
 }

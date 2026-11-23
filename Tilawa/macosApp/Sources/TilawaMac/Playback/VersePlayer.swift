@@ -35,6 +35,7 @@ final class PlaybackController: ObservableObject {
 
     private let player = AVPlayer()
     private var metadata: PlaybackMetadata?
+    private var pendingStart: Double = 0
     private var timeObserver: Any?
     private var playerStateObserver: NSKeyValueObservation?
     private var itemObservers: [NSKeyValueObservation] = []
@@ -65,9 +66,11 @@ final class PlaybackController: ObservableObject {
         remoteTargets.forEach { command, target in command.removeTarget(target) }
     }
 
-    func load(_ url: URL?, metadata: PlaybackMetadata? = nil) {
+    /// Loads an item; `startAt` is applied once the item is ready to seek.
+    func load(_ url: URL?, metadata: PlaybackMetadata? = nil, startAt: Double = 0, autoplay: Bool = false) {
         clearItemObservers()
         self.metadata = metadata
+        pendingStart = startAt
         elapsed = 0
         duration = 0
         buffered = 0
@@ -84,6 +87,7 @@ final class PlaybackController: ObservableObject {
         player.volume = volume
         state = .preparing
         observe(item)
+        if autoplay { player.play() }
         updateNowPlaying()
     }
 
@@ -118,6 +122,10 @@ final class PlaybackController: ObservableObject {
             item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
                 DispatchQueue.main.async {
                     guard let self, let item, self.player.currentItem === item else { return }
+                    if item.status == .readyToPlay, self.pendingStart > 0 {
+                        self.seek(to: self.pendingStart)
+                        self.pendingStart = 0
+                    }
                     self.refreshState()
                 }
             },

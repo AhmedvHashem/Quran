@@ -28,6 +28,7 @@ private class FakeRepository(
 ) : QuranRepository {
     override suspend fun reciters(): List<Reciter> = emptyList()
     override suspend fun editions(reciterId: Int): List<RecitationEdition> = editionsList
+    override suspend fun allEditions(): List<RecitationEdition> = editionsList
     override suspend fun chapters(): List<Chapter> = emptyList()
     override suspend fun verses(chapterId: Int): List<Verse> = track.verses
     override suspend fun playbackTrack(chapterId: Int, editionId: Int): PlaybackTrack = track

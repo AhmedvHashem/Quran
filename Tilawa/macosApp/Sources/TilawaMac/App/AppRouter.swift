@@ -1,31 +1,49 @@
 import Shared
 import SwiftUI
 
-/// App navigation router managing the three main destinations:
-/// reciter grid, reciter detail (riwayat & styles), and player.
+/// Where the window is: the sidebar destination, one navigation stack per
+/// destination, and the one naming prompt for creating or renaming a collection.
 @MainActor
 final class AppRouter: ObservableObject {
-    enum Route: Equatable {
+    enum Destination: Hashable {
+        case home
         case reciters
-        case reciterDetail(Reciter)
-        case player(Reciter, RecitationEdition)
+        case recentlyPlayed
+        case collection(String)
     }
 
-    @Published private(set) var route: Route = .reciters
-
-    func openDetail(_ reciter: Reciter) {
-        route = .reciterDetail(reciter)
+    enum Route: Hashable {
+        case reciter(Reciter)
+        case edition(RecitationEdition)
     }
 
-    func openPlayer(_ reciter: Reciter, _ edition: RecitationEdition) {
-        route = .player(reciter, edition)
+    /// Names a new collection, optionally adding a recording to it, or renames one.
+    struct Naming {
+        var collectionId: String?
+        var adding: SurahRecording?
+        var name = ""
     }
 
-    func backToReciters() {
-        route = .reciters
+    @Published var destination: Destination? = .home
+    @Published private var paths: [Destination: [Route]] = [:]
+    @Published var naming: Naming?
+
+    var current: Destination { destination ?? .home }
+
+    /// The stack under the current destination; each destination keeps its own.
+    var path: Binding<[Route]> {
+        Binding(get: { self.paths[self.current] ?? [] }, set: { self.paths[self.current] = $0 })
     }
 
-    func backToDetail(_ reciter: Reciter) {
-        route = .reciterDetail(reciter)
+    func open(_ route: Route) {
+        paths[current, default: []].append(route)
+    }
+
+    func newCollection(adding recording: SurahRecording? = nil) {
+        naming = Naming(adding: recording)
+    }
+
+    func rename(_ collection: RecitationCollection) {
+        naming = Naming(collectionId: collection.id, name: collection.name)
     }
 }

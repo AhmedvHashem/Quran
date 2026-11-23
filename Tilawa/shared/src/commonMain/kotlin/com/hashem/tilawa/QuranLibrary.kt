@@ -1,5 +1,6 @@
 package com.hashem.tilawa.api
 
+import com.hashem.tilawa.data.LibraryStore
 import com.hashem.tilawa.data.QuranRepositoryImpl
 import com.hashem.tilawa.data.defaultDownloadStore
 import com.hashem.tilawa.data.emptyRecord
@@ -9,6 +10,9 @@ import com.hashem.tilawa.domain.model.Chapter
 import com.hashem.tilawa.domain.model.ContentManifest
 import com.hashem.tilawa.domain.model.DownloadRecord
 import com.hashem.tilawa.domain.model.DownloadStatus
+import com.hashem.tilawa.domain.model.ListeningSession
+import com.hashem.tilawa.domain.model.RecitationCollection
+import com.hashem.tilawa.domain.model.SurahRecording
 import com.hashem.tilawa.domain.model.PlaybackTrack
 import com.hashem.tilawa.domain.model.Verse
 import com.hashem.tilawa.domain.model.VerseTiming
@@ -25,6 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class QuranLibrary {
     private val localTextSource = LocalQuranTextSource()
     private val downloadStore = defaultDownloadStore()
+    private val libraryStore = LibraryStore()
     private val repository = QuranRepositoryImpl(
         Mp3QuranApi(Mp3QuranApi.defaultClient()),
         localTextSource,
@@ -42,6 +47,13 @@ class QuranLibrary {
     @Throws(Exception::class, CancellationException::class)
     suspend fun editions(reciterId: Int): EditionsResult {
         val (value, failure) = quranRequest { repository.editions(reciterId) }
+        return EditionsResult(value.orEmpty(), failure)
+    }
+
+    /** Every edition in the catalog, for browsing and filtering reciters by riwayah, style and timing. */
+    @Throws(Exception::class, CancellationException::class)
+    suspend fun allEditions(): EditionsResult {
+        val (value, failure) = quranRequest { repository.allEditions() }
         return EditionsResult(value.orEmpty(), failure)
     }
 
@@ -123,14 +135,51 @@ class QuranLibrary {
     fun removeDownload(editionId: Int, chapterId: Int) {
         downloadStore.remove(editionId, chapterId)
     }
+
+    // Listening history. Newest first; one session per edition and surah.
+
+    fun sessions(): List<ListeningSession> = libraryStore.sessions()
+
+    fun recordSession(recording: SurahRecording, positionMs: Long, durationMs: Long, ayah: Int?, playedAtMs: Long) =
+        libraryStore.recordSession(recording, positionMs, durationMs, ayah, playedAtMs)
+
+    fun removeSession(editionId: Int, chapterId: Int) = libraryStore.removeSession(editionId, chapterId)
+
+    fun clearHistory() = libraryStore.clearHistory()
+
+    // Collections. Favorites always exists and always comes first.
+
+    fun collections(): List<RecitationCollection> = libraryStore.collections()
+
+    /** Returns null for a blank name. */
+    fun createCollection(name: String, nowMs: Long): RecitationCollection? = libraryStore.createCollection(name, nowMs)
+
+    /** False for Favorites, an unknown collection or a blank name. */
+    fun renameCollection(id: String, name: String, nowMs: Long): Boolean = libraryStore.renameCollection(id, name, nowMs)
+
+    /** False for Favorites or an unknown collection. Never touches audio files. */
+    fun deleteCollection(id: String): Boolean = libraryStore.deleteCollection(id)
+
+    fun moveCollection(id: String, toIndex: Int): Boolean = libraryStore.moveCollection(id, toIndex)
+
+    fun addToCollection(id: String, recording: SurahRecording, nowMs: Long): Boolean =
+        libraryStore.addToCollection(id, recording, nowMs)
+
+    fun removeFromCollection(id: String, editionId: Int, chapterId: Int, nowMs: Long): Boolean =
+        libraryStore.removeFromCollection(id, editionId, chapterId, nowMs)
+
+    fun moveCollectionItem(id: String, fromIndex: Int, toIndex: Int, nowMs: Long): Boolean =
+        libraryStore.moveCollectionItem(id, fromIndex, toIndex, nowMs)
 }
 
 internal suspend fun <T> quranRequest(block: suspend () -> T): Pair<T?, QuranFailure?> = try {
     block() to null
 } catch (failure: QuranException) {
-    null to QuranFailure(failure.code, failure.retryable, when (failure.code) {
-        QuranErrorCode.NETWORK -> "Could not connect. Please try again."
-        QuranErrorCode.EDITION_NOT_FOUND -> "This recording is no longer available."
-        QuranErrorCode.SURAH_UNAVAILABLE -> "This surah is unavailable in the selected recording."
-    })
+    null to QuranFailure(
+        failure.code, failure.retryable, when (failure.code) {
+            QuranErrorCode.NETWORK -> "Could not connect. Please try again."
+            QuranErrorCode.EDITION_NOT_FOUND -> "This recording is no longer available."
+            QuranErrorCode.SURAH_UNAVAILABLE -> "This surah is unavailable in the selected recording."
+        }
+    )
 }

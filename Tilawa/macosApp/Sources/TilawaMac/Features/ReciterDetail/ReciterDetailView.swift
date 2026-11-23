@@ -1,231 +1,149 @@
 import Shared
 import SwiftUI
 
-/// Reciter detail screen: lists all available recordings grouped by riwayah then style.
+/// One reciter's recording editions, grouped by riwayah and then style.
 struct ReciterDetailView: View {
-    @StateObject private var viewModel: ReciterDetailViewModel
+    let reciter: Reciter
+
+    @EnvironmentObject private var catalog: Catalog
     @EnvironmentObject private var router: AppRouter
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 280, maximum: 380), spacing: 16)
-    ]
-
-    init(library: QuranLibrary, reciter: Reciter) {
-        _viewModel = StateObject(wrappedValue: ReciterDetailViewModel(library: library, reciter: reciter))
-    }
+    @EnvironmentObject private var nowPlaying: NowPlaying
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Color.clear.frame(height: Theme.titleBarHeight)
-
-            // Back button and header
-            topBar
-                .padding(.horizontal, 48)
-                .padding(.top, 8)
-                .padding(.bottom, 16)
-
-            reciterHeader
-                .padding(.horizontal, 48)
-                .padding(.bottom, 24)
-
-            Divider()
-                .padding(.horizontal, 48)
-                .padding(.bottom, 20)
-
-            content
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.sidebarSurface)
-        .task { await viewModel.load() }
-    }
-
-    private var topBar: some View {
-        Button(action: { router.backToReciters() }) {
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("All Reciters")
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .foregroundStyle(Theme.accent)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 10)
-            .background(Theme.accent.opacity(0.1))
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var reciterHeader: some View {
-        HStack(spacing: 20) {
-            Artwork(size: 72, iconSize: 32)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.reciter.name)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(.primary)
-
-                Text("\(viewModel.editions.count) recording \(viewModel.editions.count == 1 ? "edition" : "editions") available")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.labelSecondary)
-            }
-
-            Spacer()
-
-            Text(viewModel.reciter.arabicName)
-                .font(Theme.arabic(26))
-                .foregroundStyle(Color.black.opacity(0.75))
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if viewModel.isLoading && viewModel.editions.isEmpty {
-            VStack {
-                ProgressView()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = viewModel.errorMessage, viewModel.editions.isEmpty {
-            VStack(spacing: 12) {
-                Text("Failed to load editions")
-                    .font(.system(size: 15, weight: .semibold))
-                Text(error)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.red)
-                Button("Retry") { Task { await viewModel.load() } }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if viewModel.editions.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "waveform.slash").font(.title)
-                Text("No recordings available").font(.headline)
-                Button("Retry") { Task { await viewModel.load() } }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    ForEach(viewModel.groups) { group in
-                        riwayahSection(group)
-                    }
+        let editions = catalog.editions(of: reciter)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 30) {
+                hero(editions)
+                ForEach(groups(editions), id: \.first!.riwayah.name) { group in
+                    riwayahSection(group)
                 }
-                .padding(.horizontal, 48)
-                .padding(.bottom, 32)
             }
+            .padding(.horizontal, 40)
+            .padding(.top, 28)
+            .padding(.bottom, 32)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .overlay {
+            if editions.isEmpty {
+                StateMessage(symbol: "waveform.slash", title: "No recordings available")
+            }
+        }
+        .navigationTitle(reciter.name)
+        // The hero carries the name; the design's toolbar holds only the back button.
+        .hidingToolbarTitle()
+    }
+
+    private func hero(_ editions: [RecitationEdition]) -> some View {
+        HStack(alignment: .top, spacing: 24) {
+            LetterTile(letter: reciter.initial, seed: reciter.id, size: 168, fontSize: 84, radius: 14)
+                .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 18)
+
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(reciter.name)
+                        .font(.system(size: 30, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text(reciter.arabicName)
+                        .arabic(22)
+                        .foregroundStyle(Theme.labelSecondary)
+                }
+                Text(summary(editions))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.labelSecondary)
+
+                if let edition = catalog.preferredEdition(of: reciter),
+                   let first = catalog.queue(edition).first {
+                    PillButton(title: "Play \(first.chapter.name)", symbol: "play.fill", isPrimary: true) {
+                        nowPlaying.play(catalog.queue(edition))
+                    }
+                    .padding(.top, 2)
+                }
+            }
+            .padding(.top, 6)
         }
     }
 
-    private func riwayahSection(_ group: RiwayahGroup) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "book.closed")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.accent)
-                Text(group.riwayah.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text("(\(group.editions.count) \(group.editions.count == 1 ? "style" : "styles"))")
+    private func summary(_ editions: [RecitationEdition]) -> String {
+        let riwayat = Set(editions.map(\.riwayah.name)).count
+        let timed = editions.filter(\.hasTiming).count
+        var parts = [
+            editions.count == 1 ? "1 recording edition" : "\(editions.count) recording editions",
+            riwayat == 1 ? "1 riwayah" : "\(riwayat) riwayat",
+        ]
+        if timed > 0 { parts.append(timed == 1 ? "Verse Sync on 1 edition" : "Verse Sync on \(timed) editions") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Ḥafṣ first, then the riwayat with the most styles; featured editions lead each group.
+    private func groups(_ editions: [RecitationEdition]) -> [[RecitationEdition]] {
+        Dictionary(grouping: editions, by: \.riwayah.name).values
+            .map { $0.sorted { ($0.isFeatured ? 1 : 0, $0.availableSurahs.count) > ($1.isFeatured ? 1 : 0, $1.availableSurahs.count) } }
+            .sorted { lhs, rhs in
+                let lhsHafs = lhs[0].riwayah.id?.int32Value == 1, rhsHafs = rhs[0].riwayah.id?.int32Value == 1
+                if lhsHafs != rhsHafs { return lhsHafs }
+                return (lhs.count, rhs[0].riwayah.name) > (rhs.count, lhs[0].riwayah.name)
+            }
+    }
+
+    private func riwayahSection(_ editions: [RecitationEdition]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(editions[0].riwayah.name).font(.system(size: 13, weight: .semibold))
+                Text(editions.count == 1 ? "1 style" : "\(editions.count) styles")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.labelSecondary)
             }
+            .padding(.leading, 2)
+            .accessibilityAddTraits(.isHeader)
 
-            LazyVGrid(columns: columns, spacing: 14) {
-                ForEach(group.editions, id: \.id) { edition in
-                    EditionCard(edition: edition) {
-                        router.openPlayer(viewModel.reciter, edition)
-                    }
+            VStack(spacing: 0) {
+                ForEach(Array(editions.enumerated()), id: \.element.id) { offset, edition in
+                    if offset > 0 { Theme.hairline.frame(height: 0.5).padding(.leading, 16) }
+                    EditionRow(edition: edition) { router.open(.edition(edition)) }
                 }
             }
+            .card()
         }
     }
 }
 
-private struct EditionCard: View {
+private struct EditionRow: View {
     let edition: RecitationEdition
-    let onSelect: () -> Void
+    let open: () -> Void
 
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(edition.style)
-                            .font(.headline)
-                            .foregroundStyle(isHovered ? .white : .primary)
-
-                        Text("\(edition.availableSurahs.count) Surahs available")
-                            .font(.caption)
-                            .foregroundStyle(isHovered ? Color.white.opacity(0.8) : Theme.labelSecondary)
+        Button(action: open) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 7) {
+                        Text(edition.style).font(.system(size: 14, weight: .semibold))
+                        if edition.isFeatured { Tag(title: "FEATURED") }
                     }
-
-                    Spacer()
-
-                    if edition.isFeatured {
-                        HStack(spacing: 3) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 10))
-                            Text("Featured")
-                                .font(.caption2.bold())
-                        }
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(isHovered ? Color.white.opacity(0.25) : Theme.accent.opacity(0.12))
-                        .foregroundStyle(isHovered ? .white : Theme.accent)
-                        .clipShape(Capsule())
-                    }
+                    Text("\(edition.availableSurahs.count) surahs · \(edition.hasTiming ? "Verse Sync verified for this recording" : "continuous audio, no timing map")")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.labelSecondary)
                 }
-
-                HStack(spacing: 8) {
-                    if edition.hasTiming {
-                        EditionBadge(symbol: "waveform", title: "Verse Sync", color: .green, isHovered: isHovered)
-                    } else {
-                        EditionBadge(symbol: "play.circle", title: "Full Audio", color: .gray, isHovered: isHovered)
-                    }
-
-                    if edition.riwayah.id != 1 {
-                        EditionBadge(symbol: "speaker.wave.2", title: "Audio Only", color: .orange, isHovered: isHovered)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(isHovered ? .white : Theme.accent)
+                Spacer(minLength: 12)
+                if edition.hasTiming {
+                    Tag(title: "Verse Sync", symbol: "waveform")
+                } else {
+                    Tag(title: "Full Audio", tint: Theme.labelSecondary, fill: Theme.segment)
                 }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.labelTertiary)
             }
-            .padding(14)
-            .frame(minHeight: 90)
-            .surface(
-                isHovered ? .tinted(Theme.accent) : .interactive,
-                in: .rect(cornerRadius: 12),
-                fallback: isHovered ? Theme.accent : Theme.cardSurface
-            )
-            .contentShape(.rect)
+            .padding(.horizontal, 16)
+            .frame(height: 58)
+            .background(isHovered ? Theme.segment : .clear)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .accessibilityLabel("\(edition.riwayah.name), \(edition.style), \(edition.availableSurahs.count) surahs")
-        .accessibilityHint("Open reader and player")
-    }
-}
-
-private struct EditionBadge: View {
-    let symbol: String
-    let title: String
-    let color: Color
-    let isHovered: Bool
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 10))
-            Text(title).font(.caption2.weight(.medium))
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(isHovered ? Color.white.opacity(0.2) : color.opacity(0.12))
-        .foregroundStyle(isHovered ? .white : color)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .accessibilityLabel("\(edition.style), \(edition.availableSurahs.count) surahs, \(edition.hasTiming ? "Verse Sync" : "Full Audio")")
+        .accessibilityHint("Show the surahs in this edition")
     }
 }

@@ -1,6 +1,6 @@
 # Tilawa application stack
 
-Status: authoritative target architecture. Updated 2026-09-22.
+Status: authoritative target architecture. Updated 2026-11-23.
 
 This document is the only technical architecture source of truth for Tilawa. Product behavior and features are defined in [PRODUCT.md](PRODUCT.md).
 
@@ -24,10 +24,9 @@ The governing boundary is:
 
 ### Current implementation focus
 
-- Build the audio player first: native playback engines, the persistent player bar, lifecycle, system media controls, continuous surah navigation, downloads and offline restart.
-- Build the reader as an overlay that the player bar opens and closes. It never owns the playback engine.
-- Add a durable library store for history, collections, bookmarks and download records, and prove it on all five targets before building on it.
-- Keep the current Quran rendering and highlighting. Change it only for a correctness, security, data-loss or accessibility regression.
+- Build the audio player first: native playback engines, the persistent player bar, lifecycle, system media controls and continuous surah navigation.
+- Build history and collections on the durable library store, proved on all five targets.
+- Defer downloads, the reader and ayah bookmarks (product scope change, 2026-11-23). The shared download store and bundled text stay: the text validates timing and supplies ayah counts.
 - Defer fixed-page Mushaf rendering, word-level timing, translations and tafsir.
 
 ### Supported targets
@@ -157,9 +156,10 @@ Primary references: [SKIE](https://skie.touchlab.co/intro), [SwiftUI navigation]
 | State/lifecycle | Swift Observation and structured concurrency around the SKIE-exposed API |
 | Media | AVFoundation `AVPlayer` owned at application level |
 | System playback | Now Playing, remote commands, media keys and interruption handling |
-| Downloads | Background `URLSession`, app-support storage and atomic file replacement |
-| Materials | SwiftUI `Material` and `NSVisualEffectView` for the sidebar, title bar and player bar; opaque content and Quran surfaces |
-| Tables | SwiftUI `Table` for the edition, downloads and collection lists |
+| Downloads | Deferred with the product feature; background `URLSession` and atomic replacement when it returns |
+| Materials | Liquid Glass on macOS 26+: system sidebar, toolbar, search and segmented controls, a full-width glass player bar floating over the content, glass (`.glass`, `.glassProminent`) action buttons, and reciter filters as glass chips (`FilterChips`). Content cards stay opaque. The bar lives in its own `NSHostingView`, added to the window's frame view above the content view (`FloatingPlayerBar`). `NavigationSplitView`'s columns are AppKit views stacked over anything SwiftUI floats on top of them, so a SwiftUI overlay or `safeAreaInset` let clicks through to rows beneath and was covered by pushed pages. Scroll views get the bar's height as bottom `contentMargins` so every page ends above it Below macOS 26 the same views fall back to flat fills through `DesignSystem/Glass.swift` and `PillButton` |
+| SDK stamp | `Package.swift` links with `-platform_version macos 13.0 26.0`. SwiftPM's default `swiftbuild` backend otherwise stamps the deployment target (13.0) as the SDK version, and AppKit then runs the app in pre-26 compatibility mode with no Liquid Glass chrome. Check with `otool -l .build/debug/TilawaMac \| grep -A5 LC_BUILD_VERSION` |
+| Lists | Card lists of surah rows for the edition, history and collection screens |
 | Search | `.searchable` with native filter controls |
 | Distribution | Signed and notarized macOS application for Apple Silicon |
 
@@ -252,12 +252,12 @@ Examples:
 |---|---|---|
 | Play a surah | Recording identity, URL/local reference, queue policy and timing data | Decoder, player, audio focus, media session and actual playback state |
 | Highlight an ayah | Pure mapping from media position to a validated timing segment | Position observation, rendering, scrolling and animation |
-| Download a surah | Download identity, requested state and metadata rules | Background transfer, file destination, permissions and OS scheduling |
-| Navigate reciter → edition → surahs → reader | Available entities and selection state | Navigation container, transitions, restoration and window/device adaptation |
-| Open the reader from the player bar | Nothing; the reader reads existing playback state | Overlay presentation, focus movement, focus mode and the guarantee that audio is untouched |
+| Download a surah (later) | Download identity, requested state and metadata rules | Background transfer, file destination, permissions and OS scheduling |
+| Navigate reciter → edition → surahs | Available entities and selection state | Navigation container, transitions, restoration and window/device adaptation |
+| Open the reader from the player bar (later) | Nothing; the reader reads existing playback state | Overlay presentation, focus movement, focus mode and the guarantee that audio is untouched |
 | Resume a surah | Session identity, stored media position and derived ayah | Seeking the engine to that position and restoring the screen |
 | Keep a collection | Collection and item identity, manual order and validity | Reorder gesture, rename affordance, drag and drop and list animation |
-| Bookmark an ayah | Edition, surah, ayah and media position | Creation affordance, list presentation and opening the reader at that ayah |
+| Bookmark an ayah (later) | Edition, surah, ayah and media position | Creation affordance, list presentation and opening the reader at that ayah |
 | Report storage use | Byte totals, per-reciter grouping and the limit decision | Budget control, disk reporting and the platform storage-management entry point |
 | Search the library | Normalized matching predicates over shared entities | Search field, debounce, result presentation and the no-results state |
 | Display an error | Stable error meaning and retry eligibility | Native message, alert, inline state and accessibility announcement |
@@ -270,11 +270,11 @@ A document is read once into memory, changed there and rewritten whole. Writes g
 
 | Document | Holds |
 |---|---|
-| `downloads.json` | Download records, including byte size and bitrate |
-| `sessions.json` | Listening sessions with media position, derived ayah and heard fraction |
-| `collections.json` | Collections, their manual order and their items |
-| `bookmarks.json` | Ayah bookmarks |
-| `preferences.json` | Reserved storage size, reader text size, last selected filters |
+| `downloads.json` | Download records (no v1 writer since downloads were deferred) |
+| `sessions.json` | Listening sessions with media position, derived ayah and heard fraction (`LibraryStore`) |
+| `collections.json` | Favorites first, then user collections with their manual order and items (`LibraryStore`) |
+| `bookmarks.json` | Ayah bookmarks, when they return with the reader |
+| `preferences.json` | Last selected filters, when a preference needs persisting |
 
 This fits the data. The whole library is a few thousand small records on one device. Ordering, day grouping, per-reciter grouping, byte sums and name search are operations on an in-memory list, not queries that need an index. Rewriting one document costs a few hundred kilobytes.
 
@@ -297,7 +297,7 @@ Use native CI hosts and do not treat compilation on one host as five-platform pr
 | Windows x64 | Native core/NuGet generation, WinUI build, generated-binding lifecycle test and MSIX smoke test |
 | Linux x64 | Native core/NuGet generation, Gir.Core app build, GTK/GStreamer integration test and Flatpak smoke test |
 
-The minimum cross-platform acceptance slice is one reciter, two surahs, streaming, seek, opening and closing the reader without disturbing audio, download, offline restart, one resumed session, one collection item, one ayah bookmark, native system controls, cancellation and one visible failure and retry path.
+The minimum cross-platform acceptance slice is one reciter, two surahs, streaming, seek, one resumed session after restart, one collection item, native system controls, cancellation and one visible failure and retry path.
 
 Each platform CI lane additionally writes a document on its real target and reads it back in a second process.
 
@@ -319,8 +319,8 @@ Each platform CI lane additionally writes a document on its real target and read
 
 | Area | Starting point | V1 gap |
 |---|---|---|
-| Shared core | Reciters, editions, chapters, bundled verses, MP3Quran client, playback track, timing DTOs and download-state implementations exist | The durable library store, sessions, collections, bookmarks, search normalization, byte accounting and shuffle order |
-| macOS | Reciter library, edition selection, reader, AVPlayer wrapper, timing-aware and plain scrubbers and foreground download exist | The redesign's eight screens, the persistent player bar, the reader overlay and focus mode, translucent materials, app-owned player, observed engine state, persistent offline restart, cancellation and the accessibility pass |
+| Shared core | Reciters, editions, chapters, bundled verses, MP3Quran client, playback track, timing, download-state, sessions and collections exist | Search normalization and shuffle order |
+| macOS | The redesign's five screens, sidebar, persistent player bar, queue, history and collections exist (2026-11-23) | Acceptance evidence, materials and contrast checks, and the accessibility pass |
 | Android | Compose template consumes shared Kotlin directly | Entire v1 product slice and Media3 integration |
 | iOS | SwiftUI template consumes the Kotlin framework | SKIE and the entire v1 product slice |
 | Windows | WinUI shell exists | NuGet-generated shared API, x64-only configuration and the entire v1 product slice |
@@ -431,25 +431,23 @@ Status: complete for the audio-player scope. Reopened on 2026-09-22 for the rede
 
 These extend the same exported contract. They depend on T2 for storage, so define the types first and implement persistence after T2 passes.
 
-- [ ] Add listening-session identity, last media position, derived ayah, heard fraction and newest-first ordering.
-- [ ] Add collection identity, the pinned Favorites rule, manual ordering and item validity when a recording leaves the catalog.
-- [ ] Add ayah-bookmark identity: edition, surah, ayah and media position.
-- [ ] Add byte size and bitrate to download metadata, plus per-reciter and total byte accounting.
-- [ ] Add the storage-budget rule: report usage, refuse a new download at the limit and never delete a user's file.
-- [ ] Add search normalization and matching predicates for English names, Arabic names, transliterations and surah numbers. Keep display text verbatim.
-- [ ] Add deterministic play-all and shuffle order for an edition and for a collection.
-- [ ] Keep the exported API narrow: expose product operations, not the store.
+- [x] Add listening-session identity, last media position, derived ayah, heard fraction and newest-first ordering (`LibraryStore`, `sessions.json`).
+- [x] Add collection identity, the pinned Favorites rule and manual ordering (`collections.json`). Items carry a name snapshot so an item whose recording left the catalog stays readable; native shells resolve validity against the catalog.
+- [x] Add `allEditions()` so reciter filters need one catalog call, and map MP3Quran's muṣḥaf-named styles to Mujawwad and Muʿallim.
+- [ ] Add search normalization and matching predicates for English names, Arabic names, transliterations and surah numbers. Keep display text verbatim. macOS uses Foundation's diacritic- and case-insensitive folding until this lands.
+- [ ] Add deterministic play-all and shuffle order for an edition and for a collection. macOS uses the system shuffle until P0 defines the rule.
+- [x] Keep the exported API narrow: expose product operations, not the store.
+- Deferred with their product features: ayah-bookmark identity, download byte size and bitrate, and the storage-budget rule.
 
 Smallest required tests for the additions:
 
-- [ ] A replayed surah updates one session instead of creating two.
-- [ ] Favorites cannot be renamed, reordered or deleted.
-- [ ] A collection keeps its manual order across a new store instance.
-- [ ] An item whose recording left the catalog stays present and reports unavailable.
-- [ ] A bookmark round-trips edition, surah, ayah and media position.
-- [ ] Byte accounting matches the sum of the download records.
-- [ ] A download at the budget limit is refused, and no existing file is removed.
-- [ ] An Arabic query and an English query find the same reciter.
+- [x] A replayed surah updates one session instead of creating two.
+- [x] Favorites cannot be renamed, reordered or deleted.
+- [x] A collection keeps its manual order across a new store instance.
+- [x] An item whose recording left the catalog stays present (verified in the macOS app, shown as unavailable).
+- [ ] An Arabic query and an English query find the same reciter (waits for shared normalization).
+
+`LibraryStoreTest` covers the store; `:shared:macosArm64Test` ran 41 tests with no failures on 2026-11-23.
 
 #### T1 contract and validation evidence
 
@@ -554,25 +552,30 @@ Tasks:
 - [x] Observe `AVPlayerItem.status`, `AVPlayer.timeControlStatus`, duration, buffering, end and failure instead of inferring state from commands.
 - [x] Cancel or generation-guard overlapping reciter, edition and surah loads.
 - [x] Continue only through surahs available in the selected edition.
-- [x] Use the shared timing resolver and leave intro/gap regions unhighlighted.
-- [x] Use persistent download metadata and a background `URLSession` configuration.
-- [x] Write to a temporary file, validate the response/file, then atomically install it.
-- [ ] Reconcile downloads at launch and prove offline playback after restart.
+- [x] Use the shared timing resolver and leave intro/gap regions without an ayah position.
 - [x] Add Now Playing metadata, remote commands and media-key behavior; macOS has no `AVAudioSession`, so observed `AVPlayer` pause/wait/failure state is its native interruption path.
-- [ ] Implement loading, buffering, offline, unavailable, error and retry states from `PRODUCT.md`.
-- [ ] Rebuild the information architecture as the redesign defines it: sidebar, Reciters, Reciter detail, Recording edition, Recently Played, Downloads and Collections.
-- [ ] Move the player into a persistent bottom bar present on every screen.
-- [ ] Make the reader an overlay that only the player-bar chip opens and closes, and prove audio is untouched.
-- [ ] Add reader focus mode and the reader text-size controls.
+- [x] Rebuild the information architecture as the redesign defines it: sidebar, Home (featured reciters), Reciters (the whole catalog), Reciter detail, Recording edition, Recently Played and Collections. Each sidebar destination keeps its own navigation stack.
+- [x] Move the player into a persistent 88pt bottom bar present on every screen, including the no-recording state.
+- [x] Add search and the reciter filter chips (riwayah, style, Verse Sync, clear).
+- [x] Build the library destinations on the T2 store: history and resume, Favorites and user collections.
+- [x] Add play all and shuffle for an edition and a collection.
+- [ ] Implement loading, buffering, offline, unavailable, error and retry states from `PRODUCT.md` on every screen. Catalog, playback and unavailable-item states exist; an offline banner does not.
 - [ ] Apply the redesign's translucent materials, and verify contrast with reduced transparency and increased contrast.
-- [ ] Add search and the reciter filter chips.
-- [ ] Build the library destinations on the T2 store: history and resume, collections and bookmarks, downloads and the storage budget.
-- [ ] Add play all and shuffle for an edition and a collection.
-- [ ] Add keyboard navigation, focus labels, VoiceOver labels and scalable text across the whole journey.
+- [ ] Add keyboard navigation, focus labels, VoiceOver labels and scalable text across the whole journey. Rows, controls and the seek bar carry labels; a full VoiceOver pass is still due.
+- Deferred with the product scope change on 2026-11-23: downloads and offline restart, the reader overlay, focus mode and text-size controls.
 
 Acceptance: the `PRODUCT.md` v1 acceptance journey passes on macOS ARM64 and becomes the reference recording and screenshots for T4 to T7.
 
-Status: active, and rescoped on 2026-09-22. Core playback, sequencing, downloads and system controls compile on macOS ARM64 and stay. The player-bar move, the reader overlay, the two new screens, the three library destinations and the material pass are new work. Library destinations wait for T2.
+Status: active. The redesign landed on 2026-11-23.
+
+- `Catalog` loads reciters, every edition and the chapters once for the app. `UserLibrary` republishes the shared history and collections. `NowPlaying` owns the queue: play all, shuffle, continue to the next surah and resume at a stored position.
+- Sessions save on pause, on the end of a surah, before switching surahs, every 10 seconds of playback and on quit.
+- Space toggles playback through a key monitor that ignores text input; a bare-Space menu shortcut would swallow spaces in search and name fields.
+- Custom controls follow the system accent color; #007AFF is its default.
+- The edition screen replaces the system back chevron with the design's labelled capsule ("‹ Al-Husary", ⌘[), using `Reciter.shortName`. Arabic letters and numbers in tiles are centred on their drawn shape (`ArabicGlyph`), since Amiri Quran's tall ascent sits a plainly centred glyph low.
+- The shared core shows formal riwayah transliterations by MP3Quran riwayah id and the editorial English names of the featured seed. Saved history and collection items show the catalog's current reciter name, falling back to their snapshot.
+- Rendered design references: the canvas boards render offline by inlining their theme variables and running headless Chrome; compared screen by screen on 2026-11-23.
+- Checked by hand in the built app on 2026-11-23: browse, filters and no results, edition play, history resume at the stored position after relaunch, row removal, collection creation, the unavailable-item state and the collection filter. Not yet exercised in the app: the row ⋯ and context menus, drag reordering and Space during typing.
 
 ### T4 — Implement Android v1
 
@@ -580,16 +583,15 @@ Goal: reproduce the canonical behavior with Android-native Compose and Media3 pa
 
 Tasks:
 
-- [ ] Replace the template UI with the canonical destinations, the persistent player bar and the reader.
+- [ ] Replace the template UI with the canonical destinations and the persistent player bar.
 - [ ] Use Material 3 adaptive layouts: phone navigation on compact widths and list/detail or supporting panes when space permits.
 - [ ] Use Android ViewModel and lifecycle-aware Flow collection around the direct shared API.
 - [ ] Implement application-level playback in a Media3 `MediaSessionService` with ExoPlayer.
 - [ ] Connect the UI through a media controller rather than owning ExoPlayer in a composable.
 - [ ] Provide media notification, audio focus, noisy-route/headset handling and system transport controls.
-- [ ] Use Media3 downloads for offline audio and register verified results with the shared core.
 - [ ] Bind the library destinations to the shared durable store.
 - [ ] Implement every required state from `PRODUCT.md`, including no results and storage budget reached.
-- [ ] Add one Compose navigation/UI journey test plus one service/download lifecycle test.
+- [ ] Add one Compose navigation/UI journey test plus one playback-service lifecycle test.
 
 Acceptance: the full v1 journey passes on a phone-sized emulator and one expanded-width emulator/device.
 
@@ -600,14 +602,13 @@ Goal: reproduce the canonical behavior with SwiftUI and Apple media/background A
 Tasks:
 
 - [ ] Build Swift-facing adapters only where the SKIE API still needs presentation-friendly shaping.
-- [ ] Replace the template with the canonical screens, the persistent player bar and the reader overlay.
+- [ ] Replace the template with the canonical screens and the persistent player bar.
 - [ ] Use `NavigationStack` on compact devices and `NavigationSplitView` where the device/window supports it.
 - [ ] Add an application-owned AVPlayer controller with observed playback/buffering/failure state.
 - [ ] Add `AVAudioSession`, Now Playing and remote-command integration.
-- [ ] Use background `URLSession` for downloads and register validated files with the shared core.
 - [ ] Bind the library destinations to the shared durable store.
 - [ ] Implement every required state from `PRODUCT.md`, including no results and storage budget reached.
-- [ ] Add one XCUITest for the primary journey and focused tests for player/download lifecycle.
+- [ ] Add one XCUITest for the primary journey and a focused test for player lifecycle.
 
 Acceptance: the full v1 journey passes on an iPhone simulator/device and an iPad or regular-width simulator.
 
@@ -618,10 +619,9 @@ Goal: reproduce the canonical behavior with WinUI 3 and the generated shared-cor
 Tasks:
 
 - [ ] Remove direct shared-library calls from application UI code; use the generated NuGet API through a small C# application service.
-- [ ] Implement the canonical pages, the persistent player bar and the reader with `NavigationView`, `Frame` and adaptive WinUI layouts.
+- [ ] Implement the canonical pages and the persistent player bar with `NavigationView`, `Frame` and adaptive WinUI layouts.
 - [ ] Use `MediaPlayer` as an application-owned service and `MediaPlaybackList` only if the v1 chapter-continuation behavior requires it.
 - [ ] Integrate System Media Transport Controls and observed buffering/failure state.
-- [ ] Use Background Transfer for durable downloads and register verified files with the shared core.
 - [ ] Handle generated wrapper disposal and cancellation deterministically.
 - [ ] Bind the library destinations to the shared durable store through the generated bindings.
 - [ ] Implement every required state from `PRODUCT.md` with keyboard and Narrator support.
@@ -636,18 +636,16 @@ Goal: reproduce the canonical behavior with C#, Gir.Core, GTK 4 and libadwaita.
 Tasks:
 
 - [ ] Use one C#/.NET application project referencing the Tilawa core package and required Gir.Core packages.
-- [ ] Implement an `Adw.Application` with the canonical navigation, the persistent player bar and the reader.
+- [ ] Implement an `Adw.Application` with the canonical navigation and the persistent player bar.
 - [ ] Coordinate asynchronous state updates with the GLib main context.
 - [ ] Implement application-owned GStreamer playback through Gir.Core.
 - [ ] Export playback state and controls through MPRIS.
-- [ ] Use `HttpClient` with temporary files, validation, atomic replacement and resumable range requests only when the server supports them.
-- [ ] Register verified downloads with the shared core and reconcile them at launch.
 - [ ] Bundle or runtime-provide the required GTK/libadwaita/GStreamer native libraries.
 - [ ] Bind the library destinations to the shared durable store through the generated bindings.
 - [ ] Implement every required state from `PRODUCT.md` with keyboard and Orca support.
 - [ ] Produce and clean-install an x64 Flatpak.
 
-Acceptance: the full v1 journey passes from the Flatpak on a clean supported GNOME environment, including MPRIS and offline restart.
+Acceptance: the full v1 journey passes from the Flatpak on a clean supported GNOME environment, including MPRIS and a resumed session after restart.
 
 ### T8 — Cross-platform parity and release validation
 
@@ -657,9 +655,7 @@ Tasks:
 
 - [ ] Run the `PRODUCT.md` acceptance journey on all five installed applications.
 - [ ] Verify available and unavailable surahs, seeking, retry, cancellation and stale-selection behavior.
-- [ ] Verify download → quit → disable network → relaunch → play on every platform.
-- [ ] Verify that opening and closing the reader never disturbs playback on every platform.
-- [ ] Verify that history, collections, bookmarks and download records survive restart on every platform.
+- [ ] Verify that history and collections survive restart on every platform.
 - [ ] Verify that reported storage usage matches the bytes on disk after reconciliation.
 - [ ] Verify native media controls, interruption behavior and background rules on every platform.
 - [ ] Verify keyboard/pointer/touch behavior and the platform screen reader.

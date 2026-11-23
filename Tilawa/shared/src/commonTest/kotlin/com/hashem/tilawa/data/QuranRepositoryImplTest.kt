@@ -223,7 +223,7 @@ class QuranRepositoryImplTest {
 
         val e1 = editions[0]
         assertEquals(101, e1.id)
-        assertEquals("Hafs A'n Assem", e1.riwayah.name)
+        assertEquals("Ḥafṣ ʿan ʿĀṣim", e1.riwayah.name)
         assertEquals(1, e1.riwayah.id)
         assertEquals("Murattal", e1.style)
         assertEquals(setOf(1, 2, 3), e1.availableSurahs)
@@ -231,7 +231,7 @@ class QuranRepositoryImplTest {
 
         val e2 = editions[1]
         assertEquals(102, e2.id)
-        assertEquals("Warsh A'n Nafi'", e2.riwayah.name)
+        assertEquals("Warsh ʿan Nāfiʿ", e2.riwayah.name)
         assertEquals(2, e2.riwayah.id)
         assertEquals("Al-Musshaf Al-Moa'lim", e2.style)
         assertFalse(e2.hasTiming)

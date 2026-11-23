@@ -64,3 +64,22 @@ struct IconButton: View {
         .buttonStyle(.plain)
     }
 }
+
+extension View {
+    /// Leaves the window title to VoiceOver and the Window menu, out of the toolbar.
+    @ViewBuilder
+    func hidingToolbarTitle() -> some View {
+        if #available(macOS 15, *) { toolbar(removing: .title) } else { self }
+    }
+}
+
+extension View {
+    /// Keeps the end of every scrolling page above the floating player bar.
+    /// Margins pass down through the environment to every scroll view, pushed
+    /// pages included; content still scrolls under the bar's glass.
+    @available(macOS 14, *)
+    func playerBarClearance() -> some View {
+        contentMargins(.bottom, PlayerBar.height, for: .scrollContent)
+            .contentMargins(.bottom, PlayerBar.height, for: .scrollIndicators)
+    }
+}

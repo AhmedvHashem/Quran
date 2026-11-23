@@ -13,6 +13,7 @@ import com.hashem.tilawa.domain.model.Verse
 internal interface QuranRepository {
     suspend fun reciters(): List<Reciter>
     suspend fun editions(reciterId: Int): List<RecitationEdition>
+    suspend fun allEditions(): List<RecitationEdition>
     suspend fun chapters(): List<Chapter>
     suspend fun verses(chapterId: Int): List<Verse>
     suspend fun playbackTrack(chapterId: Int, editionId: Int): PlaybackTrack
