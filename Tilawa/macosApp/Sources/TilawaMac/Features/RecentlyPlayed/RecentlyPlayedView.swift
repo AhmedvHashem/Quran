@@ -1,7 +1,8 @@
 import Shared
 import SwiftUI
 
-/// One flat history, newest first and grouped by day, with a resume point.
+/// The surah being listened to, then one flat history, newest first and
+/// grouped by day.
 struct RecentlyPlayedView: View {
     @EnvironmentObject private var history: ListeningHistory
     @EnvironmentObject private var catalog: Catalog
@@ -11,9 +12,17 @@ struct RecentlyPlayedView: View {
     @State private var selection: SurahRecording?
 
     var body: some View {
-        let sessions = history.sessions.filter(matches)
+        let current = nowPlaying.current?.recording
+        // With nothing in the player, as after a relaunch, the newest unfinished
+        // session is the one to continue.
+        let resumable = current == nil ? history.sessions.first { $0.heardFraction < 0.98 } : nil
+        let continuing = current ?? resumable?.recording
+        // The surah being continued is not history yet: it joins the list
+        // once another surah takes its place.
+        let earlier = history.sessions.filter { $0 != resumable && !nowPlaying.isCurrent($0.recording) }
+        let shownContinuing = continuing.flatMap { matches($0) ? $0 : nil }
         Group {
-            if history.sessions.isEmpty {
+            if continuing == nil && earlier.isEmpty {
                 StateMessage(
                     symbol: "clock",
                     title: "Nothing played yet",
@@ -22,13 +31,15 @@ struct RecentlyPlayedView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        if query.isEmpty, let session = history.sessions.first(where: { $0.heardFraction < 0.98 }) {
+                        if let recording = shownContinuing {
                             VStack(alignment: .leading, spacing: 12) {
                                 SectionHeading(title: "Continue listening")
-                                continueCard(session)
+                                continueCard(recording, session: resumable)
                             }
                         }
-                        historyList(sessions)
+                        if !earlier.isEmpty || shownContinuing == nil {
+                            historyList(earlier.filter { matches($0.recording) })
+                        }
                     }
                     .padding(.horizontal, 32)
                     .padding(.top, 26)
@@ -53,11 +64,15 @@ struct RecentlyPlayedView: View {
 
     // MARK: - Continue listening
 
-    private func continueCard(_ session: ListeningSession) -> some View {
-        let recording = session.recording
+    /// The surah in the player, live, or a stored session to resume.
+    private func continueCard(_ recording: SurahRecording, session: ListeningSession?) -> some View {
         let chapter = catalog.chapter(recording.chapterId)
         let isTimed = catalog.item(for: recording)?.edition.hasTiming ?? false
-        let remaining = Double(session.durationMs - session.positionMs) / 1000
+        let isCurrent = nowPlaying.isCurrent(recording)
+        let isAvailable = catalog.item(for: recording) != nil
+        let resume: () -> Void = {
+            if let session, !isCurrent { self.resume(session) } else { nowPlaying.player.play() }
+        }
 
         return HStack(spacing: 16) {
             NumberTile(number: recording.chapterId, size: 72, fontSize: 30, radius: 10)
@@ -73,21 +88,21 @@ struct RecentlyPlayedView: View {
                 RecordingByline(recording: recording, showsRiwayah: true)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.labelSecondary)
-                HStack(spacing: 10) {
-                    Text(positionLabel(session, chapter: chapter)).frame(width: 96, alignment: .leading)
-                    ProgressTrack(fraction: Double(session.positionMs) / Double(max(session.durationMs, 1)), height: 4)
-                    Text("\(remaining.clockTime) left").frame(width: 70, alignment: .leading)
+                if isCurrent {
+                    Watching(nowPlaying.player.clock) { clock in
+                        positionLine(ayah: clock.ayah, elapsed: clock.elapsed,
+                                     duration: nowPlaying.player.duration, chapter: chapter, isStopped: false)
+                    }
+                } else if let session {
+                    positionLine(ayah: session.ayah?.int32Value, elapsed: Double(session.positionMs) / 1000,
+                                 duration: Double(session.durationMs) / 1000, chapter: chapter, isStopped: true)
                 }
-                .font(.system(size: 10).monospacedDigit())
-                .foregroundStyle(Theme.labelSecondary)
-                .frame(maxWidth: 520)
             }
             Spacer(minLength: 0)
-            let isAvailable = catalog.item(for: recording) != nil
-            ResumeButton(player: nowPlaying.player, isCurrent: nowPlaying.isCurrent(recording)) { resume(session) }
+            ResumeButton(player: nowPlaying.player, isCurrent: isCurrent, resume: resume)
                 .disabled(!isAvailable)
             Menu {
-                RecordingActions(recording: recording, play: isAvailable ? { resume(session) } : nil)
+                RecordingActions(recording: recording, play: isAvailable ? resume : nil)
             } label: {
                 Image(systemName: "ellipsis").foregroundStyle(Theme.labelSecondary)
             }
@@ -101,9 +116,18 @@ struct RecentlyPlayedView: View {
         .card()
     }
 
-    private func positionLabel(_ session: ListeningSession, chapter: Chapter?) -> String {
-        if let ayah = session.ayah?.int32Value, let chapter { return "Āyah \(ayah) of \(chapter.versesCount)" }
-        return "Stopped at \((Double(session.positionMs) / 1000).clockTime)"
+    /// "Āyah 12 of 286 · 1:58:20 left", or the time when the recording is untimed.
+    private func positionLine(ayah: Int32?, elapsed: Double, duration: Double, chapter: Chapter?, isStopped: Bool) -> some View {
+        var parts: [String] = []
+        if let ayah, let chapter {
+            parts.append("Āyah \(ayah) of \(chapter.versesCount)")
+        } else {
+            parts.append(isStopped ? "Stopped at \(elapsed.clockTime)" : elapsed.clockTime)
+        }
+        if duration > elapsed { parts.append("\((duration - elapsed).clockTime) left") }
+        return Text(parts.joined(separator: " · "))
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundStyle(Theme.labelSecondary)
     }
 
     // MARK: - History
@@ -178,23 +202,28 @@ struct RecentlyPlayedView: View {
         nowPlaying.play(queue, startingAt: start, positionMs: position)
     }
 
-    private func matches(_ session: ListeningSession) -> Bool {
-        let chapter = catalog.chapter(session.recording.chapterId)
-        return catalog.reciterName(of: session.recording).matches(query) ||
+    private func matches(_ recording: SurahRecording) -> Bool {
+        let chapter = catalog.chapter(recording.chapterId)
+        return catalog.reciterName(of: recording).matches(query) ||
             (chapter.map { $0.name.matches(query) || $0.arabicName.matches(query) || $0.translatedName.matches(query) } ?? false)
     }
 }
 
-/// Watches the player so the label follows its observed state.
+/// Resume, or Pause while this surah plays. Watches the player so the label
+/// follows its observed state.
 private struct ResumeButton: View {
     @ObservedObject var player: PlaybackController
     let isCurrent: Bool
     let resume: () -> Void
 
     var body: some View {
-        let isPlaying = isCurrent && player.isPlaying
-        PillButton(title: isPlaying ? "Playing" : "Resume", symbol: "play.fill", isPrimary: true, action: resume)
-            .disabled(isPlaying)
+        let canPause = isCurrent && player.isActive
+        PillButton(
+            title: canPause ? "Pause" : "Resume",
+            symbol: canPause ? "pause.fill" : "play.fill",
+            isPrimary: true,
+            action: canPause ? player.pause : resume
+        )
     }
 }
 

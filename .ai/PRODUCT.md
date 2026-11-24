@@ -211,7 +211,8 @@ Purpose: return to what the user was listening to.
 Content:
 
 - Title, a history search field and a clear-history action.
-- A "Continue listening" card with the surah, reciter, style, riwayah, the stopped ayah position, the remaining time and a resume action.
+- A "Continue listening" card for the surah in the player, playing or paused; with nothing loaded, as after a relaunch, the newest unfinished session. It shows the surah, reciter, style, riwayah, the live ayah or time position and the remaining time, with Resume, or Pause while it plays. It has no progress bar.
+- The surah in the card is still being listened to, so the history list leaves it out until another surah replaces it.
 - A history list with a session count, grouped by day: today, yesterday, then earlier periods.
 - Each row shows a play/pause control, surah name, reciter, recording style, riwayah, a heard percentage and a timestamp.
 - A per-row remove action.
