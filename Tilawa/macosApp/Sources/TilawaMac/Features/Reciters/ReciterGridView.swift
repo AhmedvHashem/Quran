@@ -36,7 +36,9 @@ struct ReciterGridView: View {
             }
         }
         .navigationTitle("Reciters")
-        .searchable(text: $query, placement: .toolbar, prompt: "Search reciters")
+        .toolbar {
+            ToolbarSearchItem(text: $query, prompt: "Search reciters")
+        }
     }
 
     // MARK: - Filters

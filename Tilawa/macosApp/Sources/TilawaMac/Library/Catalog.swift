@@ -82,7 +82,9 @@ final class Catalog: ObservableObject {
 
     /// The edition's surahs in muṣḥaf order. Unavailable surahs are never listed.
     func chapters(in edition: RecitationEdition) -> [Chapter] {
-        chapters.filter { edition.availableSurahs.contains(KotlinInt(int: $0.id)) }
+        // Bridged from Kotlin once: each access copies the whole set.
+        let available = edition.availableSurahs
+        return chapters.filter { available.contains(KotlinInt(int: $0.id)) }
     }
 
     /// Every available surah of an edition, as a queue.

@@ -122,10 +122,17 @@ Content, from leading to trailing edge:
 Rules:
 
 - The bar reflects observed player state, never the last button pressed.
-- With no recording loaded, the bar stays visible with disabled controls.
+- With no recording loaded, Play is available when the queue contains surahs.
 - Native system media controls mirror the bar outside the application.
 
 Phones use a compact bar that expands into the primary playback surface.
+
+### Playback queue
+
+- The far-right toolbar button opens and closes the queue sidebar on macOS. It starts with Now Playing, followed by upcoming surahs in playback order.
+- The surah menu offers Play Next and Add to Queue. Play Next inserts immediately after the current surah, and Add to Queue appends to the end. Starting playback from an edition or collection loads that source's queue.
+- Upcoming surahs can be reordered by dragging or with Move Up and Move Down. Their menu offers Remove from Queue. Clear empties the upcoming list while the current surah continues.
+- Queue edits apply to the current listening session. Playback follows the edited order and stops when the queue ends. Editions play as separate surah tracks.
 
 ### 1. Home
 

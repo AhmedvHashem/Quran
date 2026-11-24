@@ -105,10 +105,16 @@ enum AccentChoice: String, CaseIterable {
     var color: Color {
         switch self {
         case .system: Color(nsColor: .controlAccentColor)
-        case .green: Color(light: 0x1B7A5A, dark: 0x3FBF8F)
-        case .gold: Color(light: 0x97762B, dark: 0xD8B463)
+        case .green: Self.greenColor
+        case .gold: Self.goldColor
         }
     }
+
+    // Built once: a new dynamic color never equals the last, so the accent
+    // environment changed on every root update and re-rendered every view
+    // that reads it.
+    private static let greenColor = Color(light: 0x1B7A5A, dark: 0x3FBF8F)
+    private static let goldColor = Color(light: 0x97762B, dark: 0xD8B463)
 }
 
 private struct TilawaAccentKey: EnvironmentKey {

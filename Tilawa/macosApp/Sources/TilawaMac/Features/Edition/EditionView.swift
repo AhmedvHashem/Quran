@@ -8,6 +8,7 @@ struct EditionView: View {
     @EnvironmentObject private var catalog: Catalog
     @EnvironmentObject private var nowPlaying: NowPlaying
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var userLibrary: UserLibrary
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var selectedChapter: Int32?
@@ -34,16 +35,17 @@ struct EditionView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigation) {
+                let back = router.backTitle { userLibrary.collection($0)?.name }
                 Button(action: { dismiss() }) {
-                    Label(router.backTitle, systemImage: "chevron.left")
+                    Label(back, systemImage: "chevron.left")
                         .labelStyle(.titleAndIcon)
                 }
                 .keyboardShortcut("[", modifiers: .command)
-                .help("Go Back")
-                .accessibilityLabel("Go Back")
+                .help("Back to \(back)")
+                .accessibilityLabel("Back to \(back)")
             }
+            ToolbarSearchItem(text: $query, prompt: "Find surah")
         }
-        .searchable(text: $query, placement: .toolbar, prompt: "Find surah")
     }
 
     private func scrollContent(_ queue: [QueueItem], shown: [Int]) -> some View {

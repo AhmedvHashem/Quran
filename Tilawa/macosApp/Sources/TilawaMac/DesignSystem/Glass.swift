@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Liquid Glass, applied through one seam so the deployment floor stays at
@@ -81,5 +82,82 @@ extension View {
     func playerBarClearance() -> some View {
         contentMargins(.bottom, PlayerBar.height, for: .scrollContent)
             .contentMargins(.bottom, PlayerBar.height, for: .scrollIndicators)
+    }
+}
+
+/// A native search field in the detail toolbar instead of `.searchable`.
+/// SwiftUI appends `.searchable` after the inspector tracking separator on
+/// macOS 26, which pushes the field into the queue column; a `.primaryAction`
+/// `NSSearchField` stays in the detail toolbar and still adopts Liquid Glass.
+struct ToolbarSearchItem: ToolbarContent {
+    @Binding var text: String
+    let prompt: String
+    /// Inserts a fixed spacer before the field so a preceding toolbar item keeps its own glass shape.
+    var separated = false
+
+    var body: some ToolbarContent {
+        if separated {
+            if #available(macOS 26, *) {
+                ToolbarSpacer(.fixed)
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            ToolbarSearchField(text: $text, prompt: prompt)
+        }
+    }
+}
+
+private struct ToolbarSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let prompt: String
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) { self.text = text }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            sync(field.stringValue)
+        }
+
+        @objc func searchAction(_ sender: NSSearchField) {
+            sync(sender.stringValue)
+        }
+
+        private func sync(_ value: String) {
+            if text.wrappedValue != value { text.wrappedValue = value }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.delegate = context.coordinator
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.searchAction(_:))
+        field.placeholderString = prompt
+        field.stringValue = text
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.maximumNumberOfLines = 1
+        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.setAccessibilityLabel(prompt)
+        let preferred = field.widthAnchor.constraint(equalToConstant: 200)
+        preferred.priority = .defaultHigh
+        preferred.isActive = true
+        field.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text { field.stringValue = text }
+        if field.placeholderString != prompt {
+            field.placeholderString = prompt
+            field.setAccessibilityLabel(prompt)
+        }
     }
 }

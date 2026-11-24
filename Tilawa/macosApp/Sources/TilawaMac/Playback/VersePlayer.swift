@@ -18,14 +18,25 @@ struct PlaybackMetadata {
     let album: String
 }
 
+/// The playback position, which ticks five times a second, and the ayah at
+/// it. Kept apart from the controller so that only the views showing the
+/// position re-render on each tick.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var elapsed: Double = 0
+    /// The ayah at the position; only a timed recording has one.
+    @Published var ayah: Int32?
+}
+
 /// The app-owned player. Its observed AVFoundation state is the only playback truth.
 @MainActor
 final class PlaybackController: ObservableObject {
     @Published private(set) var state: PlaybackState = .idle
-    @Published private(set) var elapsed: Double = 0
     @Published private(set) var duration: Double = 0
-    @Published private(set) var buffered: Double = 0
     @Published var volume: Float = 1 { didSet { player.volume = volume } }
+    let clock = PlaybackClock()
+
+    var elapsed: Double { clock.elapsed }
 
     var isPlaying: Bool { state == .playing }
     var isActive: Bool { state == .playing || state == .buffering }
@@ -48,9 +59,8 @@ final class PlaybackController: ObservableObject {
         ) { [weak self] time in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.elapsed = time.seconds.isFinite ? max(time.seconds, 0) : 0
+                self.clock.elapsed = time.seconds.isFinite ? max(time.seconds, 0) : 0
                 self.refreshDuration()
-                self.updateNowPlaying()
             }
         }
         playerStateObserver = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] _, _ in
@@ -71,9 +81,8 @@ final class PlaybackController: ObservableObject {
         clearItemObservers()
         self.metadata = metadata
         pendingStart = startAt
-        elapsed = 0
+        clock.elapsed = 0
         duration = 0
-        buffered = 0
 
         guard let url else {
             player.replaceCurrentItem(with: nil)
@@ -110,7 +119,9 @@ final class PlaybackController: ObservableObject {
             to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600),
             toleranceBefore: .zero,
             toleranceAfter: .zero
-        )
+        ) { [weak self] _ in
+            DispatchQueue.main.async { self?.updateNowPlaying() }
+        }
     }
 
     func restart() { seek(to: 0) }
@@ -135,17 +146,6 @@ final class PlaybackController: ObservableObject {
                     self.refreshDuration()
                 }
             },
-            item.observe(\.loadedTimeRanges, options: [.initial, .new]) { [weak self, weak item] _, _ in
-                DispatchQueue.main.async {
-                    guard let self, let item, self.player.currentItem === item else { return }
-                    let end = item.loadedTimeRanges
-                        .map(\.timeRangeValue)
-                        .map { $0.start.seconds + $0.duration.seconds }
-                        .filter(\.isFinite)
-                        .max() ?? 0
-                    self.buffered = max(end, 0)
-                }
-            },
         ]
 
         notificationObservers = [
@@ -154,7 +154,7 @@ final class PlaybackController: ObservableObject {
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.elapsed = self.duration
+                    self.clock.elapsed = self.duration
                     self.state = .ended
                     self.updateNowPlaying()
                     self.onFinish?()
@@ -180,7 +180,10 @@ final class PlaybackController: ObservableObject {
 
     private func refreshDuration() {
         let seconds = player.currentItem?.duration.seconds ?? 0
-        duration = seconds.isFinite && seconds > 0 ? seconds : 0
+        let duration = seconds.isFinite && seconds > 0 ? seconds : 0
+        guard self.duration != duration else { return }
+        self.duration = duration
+        updateNowPlaying()
     }
 
     private func refreshState() {
@@ -236,14 +239,17 @@ final class PlaybackController: ObservableObject {
         ]
     }
 
+    /// The system advances the elapsed time from the rate, so this runs on
+    /// state, duration and seek changes rather than on every position tick.
     private func updateNowPlaying() {
         guard let metadata else { return }
+        let elapsed = player.currentTime().seconds
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: metadata.title,
             MPMediaItemPropertyArtist: metadata.artist,
             MPMediaItemPropertyAlbumTitle: metadata.album,
             MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed.isFinite ? max(elapsed, 0) : 0,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1 : 0,
         ]
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused

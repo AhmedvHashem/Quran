@@ -81,15 +81,17 @@ struct PlayerBar: View {
     private var transport: some View {
         HStack(spacing: 8) {
             transportButton("backward.end.fill", label: "Previous ayah or surah", action: nowPlaying.previous)
+                .disabled(isEmpty)
 
             playButton
                 .help(player.isActive ? "Pause" : "Play")
                 .accessibilityLabel(player.isActive ? "Pause" : "Play")
+                .disabled(!nowPlaying.canPlay)
 
             transportButton("forward.end.fill", label: "Next ayah or surah", action: nowPlaying.next)
+                .disabled(isEmpty)
         }
-        .disabled(isEmpty)
-        .opacity(isEmpty ? 0.45 : 1)
+        .opacity(nowPlaying.canPlay ? 1 : 0.45)
     }
 
     /// The accent circle: prominent Liquid Glass on macOS 26, a flat fill below.
@@ -132,9 +134,14 @@ struct PlayerBar: View {
         .accessibilityLabel(label)
     }
 
+    /// Only this row and the ayah tag watch the clock, which ticks five times a second.
     private var seekRow: some View {
+        Watching(player.clock) { clock in seekRow(elapsed: clock.elapsed) }
+    }
+
+    private func seekRow(elapsed: Double) -> some View {
         HStack(spacing: 10) {
-            Text(isEmpty ? "" : player.elapsed.clockTime)
+            Text(isEmpty ? "" : elapsed.clockTime)
                 .frame(width: 44, alignment: .trailing)
             SeekBar(
                 progress: nowPlaying.progress,
@@ -161,9 +168,13 @@ struct PlayerBar: View {
         HStack(spacing: 12) {
             if nowPlaying.errorMessage != nil {
                 Button("Retry", action: nowPlaying.retry).glassPill().controlSize(.small)
-            } else if let ayah = nowPlaying.ayah, let chapter = nowPlaying.current?.chapter {
-                CapsuleTag(title: "Āyah \(ayah) of \(chapter.versesCount)", symbol: "waveform")
-                    .accessibilityLabel("Ayah \(ayah) of \(chapter.versesCount)")
+            } else if let chapter = nowPlaying.current?.chapter {
+                Watching(player.clock) { clock in
+                    if let ayah = clock.ayah {
+                        CapsuleTag(title: "Āyah \(ayah) of \(chapter.versesCount)", symbol: "waveform")
+                            .accessibilityLabel("Ayah \(ayah) of \(chapter.versesCount)")
+                    }
+                }
             }
 
             HStack(spacing: 7) {

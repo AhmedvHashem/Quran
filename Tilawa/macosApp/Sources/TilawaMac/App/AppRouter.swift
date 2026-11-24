@@ -32,6 +32,7 @@ final class AppRouter: ObservableObject {
     }
 
     @Published var destination: Destination? = .home
+    @Published var showsQueue = false
     @Published private var paths: [Destination: [Route]] = [:]
     @Published private(set) var editionLink: EditionLink?
     @Published var naming: Naming?
@@ -41,7 +42,15 @@ final class AppRouter: ObservableObject {
     /// The stack under the current destination; each destination keeps its own.
     var path: Binding<[Route]> {
         let destination = current
-        return Binding(get: { self.paths[destination] ?? [] }, set: { self.paths[destination] = $0 })
+        return Binding(
+            get: { self.paths[destination] ?? [] },
+            set: { path in
+                // A stack torn down by switching destinations writes an empty
+                // path on its way out; only the shown stack may change its path.
+                guard self.current == destination, self.paths[destination] ?? [] != path else { return }
+                self.paths[destination] = path
+            }
+        )
     }
 
     func open(_ route: Route) {
@@ -58,9 +67,20 @@ final class AppRouter: ObservableObject {
         open(.edition(edition))
     }
 
-    var backTitle: String {
-        if case .reciter(let reciter) = path.wrappedValue.dropLast().last { return reciter.shortName }
-        return "Back"
+    /// Where Back leads, named like the design's "‹ Al-Husary": the previous
+    /// page, or the sidebar destination the stack started from.
+    func backTitle(collectionName: (String) -> String?) -> String {
+        switch path.wrappedValue.dropLast().last {
+        case .reciter(let reciter): return reciter.shortName
+        case .edition(let edition): return edition.style
+        case nil:
+            switch current {
+            case .home: return "Home"
+            case .reciters: return "Reciters"
+            case .recentlyPlayed: return "Recently Played"
+            case .collection(let id): return collectionName(id) ?? "Back"
+            }
+        }
     }
 
     func newCollection(adding recording: SurahRecording? = nil) {

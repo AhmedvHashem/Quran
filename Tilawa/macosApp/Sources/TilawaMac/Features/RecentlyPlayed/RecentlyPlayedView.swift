@@ -3,7 +3,7 @@ import SwiftUI
 
 /// One flat history, newest first and grouped by day, with a resume point.
 struct RecentlyPlayedView: View {
-    @EnvironmentObject private var userLibrary: UserLibrary
+    @EnvironmentObject private var history: ListeningHistory
     @EnvironmentObject private var catalog: Catalog
     @EnvironmentObject private var nowPlaying: NowPlaying
     @State private var query = ""
@@ -11,9 +11,9 @@ struct RecentlyPlayedView: View {
     @State private var selection: SurahRecording?
 
     var body: some View {
-        let sessions = userLibrary.sessions.filter(matches)
+        let sessions = history.sessions.filter(matches)
         Group {
-            if userLibrary.sessions.isEmpty {
+            if history.sessions.isEmpty {
                 StateMessage(
                     symbol: "clock",
                     title: "Nothing played yet",
@@ -22,13 +22,13 @@ struct RecentlyPlayedView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        if query.isEmpty, let session = userLibrary.sessions.first(where: { $0.heardFraction < 0.98 }) {
+                        if query.isEmpty, let session = history.sessions.first(where: { $0.heardFraction < 0.98 }) {
                             VStack(alignment: .leading, spacing: 12) {
                                 SectionHeading(title: "Continue listening")
                                 continueCard(session)
                             }
                         }
-                        history(sessions)
+                        historyList(sessions)
                     }
                     .padding(.horizontal, 32)
                     .padding(.top, 26)
@@ -37,13 +37,15 @@ struct RecentlyPlayedView: View {
             }
         }
         .navigationTitle("Recently Played")
-        .searchable(text: $query, placement: .toolbar, prompt: "Search history")
         .toolbar {
-            Button("Clear History") { isConfirmingClear = true }
-                .disabled(userLibrary.sessions.isEmpty)
+            ToolbarItem(placement: .primaryAction) {
+                Button("Clear History") { isConfirmingClear = true }
+                    .disabled(history.sessions.isEmpty)
+            }
+            ToolbarSearchItem(text: $query, prompt: "Search history", separated: true)
         }
         .confirmationDialog("Clear all listening history?", isPresented: $isConfirmingClear) {
-            Button("Clear History", role: .destructive) { userLibrary.clearHistory() }
+            Button("Clear History", role: .destructive) { history.clearHistory() }
         } message: {
             Text("Every resume point on this Mac is removed.")
         }
@@ -106,7 +108,7 @@ struct RecentlyPlayedView: View {
 
     // MARK: - History
 
-    private func history(_ sessions: [ListeningSession]) -> some View {
+    private func historyList(_ sessions: [ListeningSession]) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             SectionHeading(title: "History", detail: sessions.count == 1 ? "1 session" : "\(sessions.count) sessions")
             if sessions.isEmpty {
@@ -133,7 +135,7 @@ struct RecentlyPlayedView: View {
                             isSelected: selection == session.recording,
                             select: { selection = session.recording },
                             resume: { resume(session) },
-                            remove: { userLibrary.remove(session) }
+                            remove: { history.remove(session) }
                         )
                     }
                 }

@@ -21,23 +21,25 @@ struct CollectionView: View {
         if let collection = userLibrary.collection(collectionId) {
             content(collection)
                 .navigationTitle(collection.name)
-                .searchable(
-                    text: $query,
-                    placement: .toolbar,
-                    prompt: collection.isFavorites ? "Search favorites" : "Filter in collection"
-                )
                 .toolbar {
                     // Sits just left of the search field, like the design's toolbar actions.
                     if !collection.isFavorites {
-                        Menu {
-                            Button("Rename…") { router.rename(collection) }
-                            Button("Delete…") { isConfirmingDelete = true }
-                        } label: {
-                            Label("Collection actions", systemImage: "ellipsis")
+                        ToolbarItem(placement: .primaryAction) {
+                            Menu {
+                                Button("Rename…") { router.rename(collection) }
+                                Button("Delete…") { isConfirmingDelete = true }
+                            } label: {
+                                Label("Collection actions", systemImage: "ellipsis")
+                            }
+                            .menuIndicator(.hidden)
+                            .help("Rename or delete this collection")
                         }
-                        .menuIndicator(.hidden)
-                        .help("Rename or delete this collection")
                     }
+                    ToolbarSearchItem(
+                        text: $query,
+                        prompt: collection.isFavorites ? "Search favorites" : "Filter in collection",
+                        separated: !collection.isFavorites
+                    )
                 }
                 .confirmationDialog("Delete “\(collection.name)”?", isPresented: $isConfirmingDelete) {
                     Button("Delete Collection", role: .destructive) {

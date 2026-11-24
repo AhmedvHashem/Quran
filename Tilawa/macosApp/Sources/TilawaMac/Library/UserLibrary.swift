@@ -1,24 +1,20 @@
 import Shared
 import SwiftUI
 
-/// Listening history and collections. The shared core owns the documents and
-/// their rules; this republishes them for SwiftUI after every change.
+/// Listening history. The shared core owns the document and its rules; this
+/// republishes it for SwiftUI after every change. Apart from the collections
+/// because playback saves progress every 10 seconds, and only Recently Played
+/// shows it: every row's heart and menu watch the collections.
 @MainActor
-final class UserLibrary: ObservableObject {
+final class ListeningHistory: ObservableObject {
     @Published private(set) var sessions: [ListeningSession] = []
-    @Published private(set) var collections: [RecitationCollection] = []
 
     private let library: QuranLibrary
 
     init(library: QuranLibrary) {
         self.library = library
         sessions = library.sessions()
-        collections = library.collections()
     }
-
-    private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
-
-    // MARK: History
 
     func record(_ recording: SurahRecording, positionMs: Int64, durationMs: Int64, ayah: Int32?) {
         library.recordSession(
@@ -26,7 +22,7 @@ final class UserLibrary: ObservableObject {
             positionMs: positionMs,
             durationMs: durationMs,
             ayah: ayah.map { KotlinInt(int: $0) },
-            playedAtMs: nowMs
+            playedAtMs: Int64(Date().timeIntervalSince1970 * 1000)
         )
         sessions = library.sessions()
     }
@@ -40,8 +36,21 @@ final class UserLibrary: ObservableObject {
         library.clearHistory()
         sessions = []
     }
+}
 
-    // MARK: Collections
+/// Favorites and the user's collections, republished for SwiftUI after every change.
+@MainActor
+final class UserLibrary: ObservableObject {
+    @Published private(set) var collections: [RecitationCollection] = []
+
+    private let library: QuranLibrary
+
+    init(library: QuranLibrary) {
+        self.library = library
+        collections = library.collections()
+    }
+
+    private var nowMs: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
     var favorites: RecitationCollection { collections[0] }
     var userCollections: ArraySlice<RecitationCollection> { collections.dropFirst() }

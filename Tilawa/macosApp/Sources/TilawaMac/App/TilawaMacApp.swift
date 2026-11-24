@@ -4,23 +4,25 @@ import SwiftUI
 
 @main
 struct TilawaMacApp: App {
-    @StateObject private var router = AppRouter()
-    @StateObject private var catalog: Catalog
-    @StateObject private var userLibrary: UserLibrary
-    @StateObject private var playback: PlaybackController
-    @StateObject private var nowPlaying: NowPlaying
+    // Owned, not observed: an App that observes these re-runs its body on every
+    // change, which rebuilt the whole window five times a second during playback.
+    // Each view observes only what it shows.
+    @State private var router = AppRouter()
+    @State private var catalog: Catalog
+    @State private var userLibrary: UserLibrary
+    @State private var history: ListeningHistory
+    @State private var nowPlaying: NowPlaying
 
     init() {
         // One shared-core instance for the whole app; features never build their own.
         let library = QuranLibrary()
-        let playback = PlaybackController()
         let userLibrary = UserLibrary(library: library)
-        _catalog = StateObject(wrappedValue: Catalog(library: library))
-        _userLibrary = StateObject(wrappedValue: userLibrary)
-        _playback = StateObject(wrappedValue: playback)
-        _nowPlaying = StateObject(
-            wrappedValue: NowPlaying(library: library, player: playback, userLibrary: userLibrary)
-        )
+        _catalog = State(initialValue: Catalog(library: library))
+        let history = ListeningHistory(library: library)
+        _userLibrary = State(initialValue: userLibrary)
+        _history = State(initialValue: history)
+        let nowPlaying = NowPlaying(library: library, player: PlaybackController(), history: history)
+        _nowPlaying = State(initialValue: nowPlaying)
 
         // Space plays and pauses, except while typing. A bare-Space menu
         // shortcut would take the space out of every search and name field.
@@ -29,18 +31,22 @@ struct TilawaMacApp: App {
                   event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
                   !(NSApp.keyWindow?.firstResponder is NSText),
                   NSApp.keyWindow?.attachedSheet == nil else { return event }
-            MainActor.assumeIsolated { playback.toggle() }
+            MainActor.assumeIsolated { nowPlaying.togglePlay() }
             return nil
         }
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(catalog: catalog, userLibrary: userLibrary, nowPlaying: nowPlaying)
                 .environmentObject(router)
                 .environmentObject(catalog)
                 .environmentObject(userLibrary)
+                .environmentObject(history)
                 .environmentObject(nowPlaying)
+                // A constant minimum: one that grew with the queue open made the
+                // split view squeeze the queue and overflow the toolbar while the
+                // sidebar animated open.
                 .frame(minWidth: 960, minHeight: 600)
         }
         .defaultSize(width: 1280, height: 800)
@@ -49,36 +55,55 @@ struct TilawaMacApp: App {
             SettingsView()
         }
         .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New Collection…") { router.newCollection() }
-                    .keyboardShortcut("n", modifiers: .command)
+            TilawaCommands(router: router, nowPlaying: nowPlaying, player: nowPlaying.player)
+        }
+    }
+}
+
+/// The menu bar's commands. They observe the router and player themselves, so
+/// a change re-evaluates only the menus.
+private struct TilawaCommands: Commands {
+    @ObservedObject var router: AppRouter
+    @ObservedObject var nowPlaying: NowPlaying
+    @ObservedObject var player: PlaybackController
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Collection…") { router.newCollection() }
+                .keyboardShortcut("n", modifiers: .command)
+        }
+        CommandGroup(after: .textEditing) {
+            Button("Find…") { focusToolbarSearch() }
+                .keyboardShortcut("f", modifiers: .command)
+        }
+        CommandMenu("Playback") {
+            Button(player.isActive ? "Pause" : "Play", action: nowPlaying.togglePlay)
+                .disabled(!nowPlaying.canPlay)
+            Button("Previous", action: player.previous)
+                .keyboardShortcut(.leftArrow, modifiers: [.command])
+            Button("Next", action: player.next)
+                .keyboardShortcut(.rightArrow, modifiers: [.command])
+            Button(router.showsQueue ? "Hide Queue" : "Show Queue") { router.showsQueue.toggle() }
+            Divider()
+            Button("Go to Reciter") {
+                if let item = nowPlaying.current { router.open(.reciter(item.reciter)) }
             }
-            CommandMenu("Playback") {
-                Button(playback.isActive ? "Pause" : "Play", action: playback.toggle)
-                    .disabled(nowPlaying.current == nil)
-                Button("Previous", action: playback.previous)
-                    .keyboardShortcut(.leftArrow, modifiers: [.command])
-                Button("Next", action: playback.next)
-                    .keyboardShortcut(.rightArrow, modifiers: [.command])
-                Divider()
-                Button("Go to Reciter") {
-                    if let item = nowPlaying.current { router.open(.reciter(item.reciter)) }
-                }
-                .disabled(nowPlaying.current == nil)
-                Button("Go to Recording") {
-                    if let item = nowPlaying.current { router.openRecording(item.edition, chapterId: item.chapter.id) }
-                }
-                .disabled(nowPlaying.current == nil)
+            .disabled(nowPlaying.current == nil)
+            Button("Go to Recording") {
+                if let item = nowPlaying.current { router.openRecording(item.edition, chapterId: item.chapter.id) }
             }
+            .disabled(nowPlaying.current == nil)
         }
     }
 }
 
 private struct RootView: View {
+    // Held, not observed: the root rebuilds the navigation stack, so it
+    // re-renders only for navigation.
+    let catalog: Catalog
+    let userLibrary: UserLibrary
+    let nowPlaying: NowPlaying
     @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var catalog: Catalog
-    @EnvironmentObject private var userLibrary: UserLibrary
-    @EnvironmentObject private var nowPlaying: NowPlaying
     @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage(AppearanceChoice.key) private var appearance = AppearanceChoice.system
@@ -126,7 +151,49 @@ private struct RootView: View {
             .environment(\.colorScheme, appearance.colorScheme ?? colorScheme)
     }
 
+    @ViewBuilder
     private var split: some View {
+        if #available(macOS 14, *) {
+            navigationSplit
+                .inspector(isPresented: $router.showsQueue) {
+                    PlaylistQueueView()
+                        .inspectorColumnWidth(min: 270, ideal: 310, max: 420)
+                        .toolbar {
+                            if #available(macOS 26, *) {
+                                ToolbarSpacer(.flexible)
+                            }
+                            ToolbarItem(placement: .primaryAction) {
+                                queueToggleButton
+                            }
+                        }
+                }
+        } else {
+            HStack(spacing: 0) {
+                navigationSplit
+                if router.showsQueue {
+                    Divider()
+                    PlaylistQueueView()
+                        .frame(width: 290)
+                        .background(.regularMaterial)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    queueToggleButton
+                }
+            }
+        }
+    }
+
+    private var queueToggleButton: some View {
+        let title = router.showsQueue ? "Hide Queue" : "Show Queue"
+        return Button { router.showsQueue.toggle() } label: {
+            Label(title, systemImage: "sidebar.right")
+        }
+        .help(title)
+    }
+
+    private var navigationSplit: some View {
         NavigationSplitView {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
@@ -134,10 +201,15 @@ private struct RootView: View {
             NavigationStack(path: router.path) {
                 root(router.current)
                     .navigationDestination(for: AppRouter.Route.self) { route in
-                        switch route {
-                        case .reciter(let reciter): ReciterDetailView(reciter: reciter)
-                        case .edition(let edition): EditionView(edition: edition)
+                        Group {
+                            switch route {
+                            case .reciter(let reciter): ReciterDetailView(reciter: reciter)
+                            case .edition(let edition): EditionView(edition: edition)
+                            }
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Resizing the inspector can leave earlier pages visible behind the destination.
+                        .background(Theme.content)
                     }
             }
             .id(router.current)
@@ -180,6 +252,20 @@ private struct RootView: View {
             }
         }
     }
+}
+
+/// Focuses the visible toolbar search field in the key window on ⌘F.
+@MainActor
+private func focusToolbarSearch() {
+    guard let window = NSApp.keyWindow, let root = window.contentView?.superview else { return }
+    func findSearchField(in view: NSView) -> NSSearchField? {
+        if let field = view as? NSSearchField, !field.isHiddenOrHasHiddenAncestor { return field }
+        for subview in view.subviews {
+            if let field = findSearchField(in: subview) { return field }
+        }
+        return nil
+    }
+    if let field = findSearchField(in: root) { window.makeFirstResponder(field) }
 }
 
 /// Floats the player bar in its own AppKit view, added to the window above the

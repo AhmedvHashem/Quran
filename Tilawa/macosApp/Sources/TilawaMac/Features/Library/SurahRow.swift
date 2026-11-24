@@ -75,16 +75,24 @@ struct SurahRow<Detail: View, Actions: View>: View {
     }
 }
 
-/// The play/pause button where a surah list used to show its number.
+/// The play/pause button where a surah list used to show its number. Only the
+/// current row watches the player, whose position ticks five times a second.
 struct RowPlayButton: View {
-    @ObservedObject var player: PlaybackController
+    let player: PlaybackController
     @Environment(\.tilawaAccent) private var accent
     let isCurrent: Bool
     let name: String
     let action: () -> Void
 
     var body: some View {
-        let canPause = isCurrent && player.isActive
+        if isCurrent {
+            Watching(player) { button(canPause: $0.isActive) }
+        } else {
+            button(canPause: false)
+        }
+    }
+
+    private func button(canPause: Bool) -> some View {
         Button(action: action) {
             Image(systemName: canPause ? "pause.fill" : "play.fill")
                 .font(.system(size: 10))
@@ -96,6 +104,20 @@ struct RowPlayButton: View {
         .help(canPause ? "Pause" : "Play")
         .accessibilityLabel(canPause ? "Pause \(name)" : "Play \(name)")
     }
+}
+
+/// Re-renders its content as `object` changes, keeping those updates out of
+/// the views around it.
+struct Watching<Object: ObservableObject, Content: View>: View {
+    @ObservedObject var object: Object
+    let content: (Object) -> Content
+
+    init(_ object: Object, @ViewBuilder content: @escaping (Object) -> Content) {
+        self.object = object
+        self.content = content
+    }
+
+    var body: some View { content(object) }
 }
 
 /// A name that opens its page when clicked and underlines on hover, like the
@@ -145,11 +167,22 @@ struct SurahTitle: View {
         .lineLimit(1)
     }
 
+    /// One underline under both names. Each font draws its own at a different
+    /// depth (Amiri's sits lower), so the line is drawn here, 2pt under the
+    /// English baseline, across the English and Arabic names alike.
     private func label(underlined: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(title).underline(underlined)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
             if let arabic {
-                Text(arabic).underline(underlined).arabic(arabicSize).foregroundStyle(Theme.labelSecondary)
+                Text(arabic).arabic(arabicSize).foregroundStyle(Theme.labelSecondary)
+            }
+        }
+        .overlay(alignment: Alignment(horizontal: .leading, vertical: .firstTextBaseline)) {
+            if underlined {
+                Rectangle()
+                    .fill(.foreground)
+                    .frame(height: 1)
+                    .alignmentGuide(.firstTextBaseline) { $0[.top] - 2 }
             }
         }
     }
@@ -279,15 +312,28 @@ struct RecordingActions: View {
     /// The collection this row belongs to, which offers removal from it.
     var collectionId: String? = nil
     let play: (() -> Void)?
+    var showsQueueInsertion = true
 
     @EnvironmentObject private var userLibrary: UserLibrary
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var catalog: Catalog
+    @EnvironmentObject private var nowPlaying: NowPlaying
 
     var body: some View {
         let reciter = catalog.reciter(recording.reciterId)
         let edition = catalog.edition(recording.editionId)
         Button("Play") { play?() }.disabled(play == nil)
+        if showsQueueInsertion {
+            let item = catalog.item(for: recording)
+            Button("Play Next") {
+                if let item { nowPlaying.enqueue(item, next: true) }
+            }
+            .disabled(item == nil)
+            Button("Add to Queue") {
+                if let item { nowPlaying.enqueue(item) }
+            }
+            .disabled(item == nil)
+        }
         Divider()
         Button("Go to Reciter") {
             if let reciter { router.open(.reciter(reciter)) }
