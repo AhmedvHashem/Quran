@@ -77,7 +77,7 @@ final class AppRouter: ObservableObject {
             switch current {
             case .home: return "Home"
             case .reciters: return "Reciters"
-            case .recentlyPlayed: return "Recently Played"
+            case .recentlyPlayed: return "History"
             case .collection(let id): return collectionName(id) ?? "Back"
             }
         }

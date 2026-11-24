@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Listening history. The shared core owns the document and its rules; this
 /// republishes it for SwiftUI after every change. Apart from the collections
-/// because playback saves progress every 10 seconds, and only Recently Played
+/// because playback saves progress every 10 seconds, and only History
 /// shows it: every row's heart and menu watch the collections.
 @MainActor
 final class ListeningHistory: ObservableObject {

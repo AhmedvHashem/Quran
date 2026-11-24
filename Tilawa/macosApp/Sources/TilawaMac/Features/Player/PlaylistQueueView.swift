@@ -11,58 +11,58 @@ struct PlaylistQueueView: View {
 
     var body: some View {
         let entries = Array(nowPlaying.upcoming)
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Now Playing")
-                .font(.title2.weight(.semibold))
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+        // The title scrolls with the queue, and the scroll view is the panel's
+        // root so the whole list passes under the toolbar's glass.
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+                Text("Now Playing")
+                    .font(.title2.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.leading, 4)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    if let current = nowPlaying.current {
-                        track(current, isCurrent: true, play: nowPlaying.togglePlay) { EmptyView() }
-                            .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
-                            .padding(.bottom, 8)
-                    } else {
-                        Text("Not Playing")
-                            .font(.callout)
-                            .foregroundStyle(Theme.labelSecondary)
-                            .padding(.leading, 4)
-                            .padding(.bottom, 8)
-                    }
+                if let current = nowPlaying.current {
+                    track(current, isCurrent: true, play: nowPlaying.togglePlay) { EmptyView() }
+                        .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                        .padding(.bottom, 8)
+                } else {
+                    Text("Not Playing")
+                        .font(.callout)
+                        .foregroundStyle(Theme.labelSecondary)
+                        .padding(.leading, 4)
+                        .padding(.bottom, 8)
+                }
 
-                    HStack {
-                        sectionTitle("Up Next")
-                        Spacer()
-                        if !entries.isEmpty {
-                            Button("Clear", action: nowPlaying.clearUpcoming)
-                                .buttonStyle(.plain)
-                                .foregroundStyle(accent)
-                                .help("Clear upcoming surahs")
-                                .accessibilityLabel("Clear Upcoming Queue")
-                        }
-                    }
-                    .padding(.trailing, 4)
-
-                    if entries.isEmpty {
-                        Text(nowPlaying.current == nil ? "Play a surah or add one from its menu." : "No upcoming surahs")
-                            .font(.callout)
-                            .foregroundStyle(Theme.labelSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 4)
-                            .padding(.top, 6)
-                    }
-
-                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                        queueRow(entry, previous: index > 0 ? entries[index - 1].id : nil,
-                                 next: index + 1 < entries.count ? entries[index + 1].id : nil)
+                HStack {
+                    sectionTitle("Up Next")
+                    Spacer()
+                    if !entries.isEmpty {
+                        Button("Clear", action: nowPlaying.clearUpcoming)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(accent)
+                            .help("Clear upcoming surahs")
+                            .accessibilityLabel("Clear Upcoming Queue")
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.trailing, 4)
+
+                if entries.isEmpty {
+                    Text(nowPlaying.current == nil ? "Play a surah or add one from its menu." : "No upcoming surahs")
+                        .font(.callout)
+                        .foregroundStyle(Theme.labelSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 6)
+                }
+
+                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                    queueRow(entry, previous: index > 0 ? entries[index - 1].id : nil,
+                             next: index + 1 < entries.count ? entries[index + 1].id : nil)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -113,8 +113,13 @@ struct PlaylistQueueView: View {
         _ item: QueueItem, isCurrent: Bool, play: @escaping () -> Void, @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         HStack(spacing: 5) {
-            if !isCurrent { DragHandle() }
-            RowPlayButton(player: nowPlaying.player, isCurrent: isCurrent, name: item.chapter.name, action: play)
+            if isCurrent {
+                RowPlayButton(player: nowPlaying.player, isCurrent: true, name: item.chapter.name, action: play)
+            } else {
+                // Upcoming rows play on a double-click or from their menu. The
+                // handle takes the play button's width so the names line up.
+                DragHandle().frame(width: 26)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 SurahTitle(title: item.chapter.name, arabic: item.chapter.arabicName, recording: item.recording)
                     .font(.system(size: 13, weight: .semibold))

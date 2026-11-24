@@ -47,7 +47,7 @@ struct RecentlyPlayedView: View {
                 }
             }
         }
-        .navigationTitle("Recently Played")
+        .navigationTitle("History")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Clear History") { isConfirmingClear = true }
@@ -253,7 +253,7 @@ private struct HistoryRow: View {
             .disabled(!isAvailable)
             HStack(spacing: 11) {
                 VStack(alignment: .leading, spacing: 2) {
-                    SurahTitle(title: title, recording: session.recording)
+                    SurahTitle(title: title, arabic: chapter?.arabicName, recording: session.recording)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(isCurrent ? accent : .primary)
                     RecordingByline(recording: session.recording)
