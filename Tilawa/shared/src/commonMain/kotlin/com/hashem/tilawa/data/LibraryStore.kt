@@ -3,6 +3,7 @@ package com.hashem.tilawa.data
 import com.hashem.tilawa.data.local.Document
 import com.hashem.tilawa.data.local.FileDocument
 import com.hashem.tilawa.domain.model.CollectionItem
+import com.hashem.tilawa.domain.model.FavoriteReciter
 import com.hashem.tilawa.domain.model.ListeningSession
 import com.hashem.tilawa.domain.model.RecitationCollection
 import com.hashem.tilawa.domain.model.RecitationCollection.Companion.FAVORITES_ID
@@ -104,6 +105,16 @@ internal class LibraryStore(
         val moved = items.removeAt(fromIndex)
         items.add(toIndex.coerceIn(0, items.size), moved)
         collection.copy(items = items, updatedAtMs = nowMs)
+    }
+
+    /** Adding a reciter Favorites already holds changes nothing. */
+    fun addFavoriteReciter(reciterId: Int, name: String, nowMs: Long): Boolean = update(FAVORITES_ID) { favorites ->
+        if (favorites.reciters.any { it.reciterId == reciterId }) favorites
+        else favorites.copy(reciters = favorites.reciters + FavoriteReciter(reciterId, name, nowMs), updatedAtMs = nowMs)
+    }
+
+    fun removeFavoriteReciter(reciterId: Int, nowMs: Long): Boolean = update(FAVORITES_ID) { favorites ->
+        favorites.copy(reciters = favorites.reciters.filterNot { it.reciterId == reciterId }, updatedAtMs = nowMs)
     }
 
     private fun favorites() = collections.first { it.isFavorites }

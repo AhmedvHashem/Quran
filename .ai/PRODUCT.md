@@ -35,7 +35,7 @@ Tilawa serves people who want to:
 - Browse a reciter's available riwayat and styles clearly.
 - Know which ayah is playing when verified timing is available.
 - Continue a surah at the ayah where they stopped.
-- Keep chosen recitations in favorites and in personal collections.
+- Keep chosen recitations and reciters in favorites, and recitations in personal collections.
 - Find a reciter, edition or surah by name in either language.
 - Use an application that feels correct on their operating system.
 
@@ -82,7 +82,7 @@ Library
 ├── Reciters                     ← the whole catalog, searchable and filterable
 │   └── Reciter detail           ← editions grouped by riwayah, then style
 │       └── Recording edition    ← every surah inside one edition
-├── Recently Played
+├── History
 └── Collections
     ├── Favorites                ← pinned, always present
     └── User collections         ← reorderable and renamable
@@ -95,7 +95,7 @@ The normal first-use flow is:
 3. Review that reciter's editions, grouped by riwayah and then by style.
 4. Choose an edition and open its surah list.
 5. Start a surah. The player bar takes over and keeps playing everywhere.
-6. Move freely to Recently Played or a collection while audio continues.
+6. Move freely to History or a collection while audio continues.
 
 Back navigation follows the listening chain in reverse; Home and Reciters each keep their own chain. The sidebar reaches any library destination directly. Playback continues until the user stops it or the queue ends.
 
@@ -129,9 +129,9 @@ Phones use a compact bar that expands into the primary playback surface.
 
 ### Playback queue
 
-- The far-right toolbar button opens and closes the queue sidebar on macOS. It starts with Now Playing, followed by upcoming surahs in playback order.
+- The far-right toolbar button opens and closes the queue sidebar on macOS. It starts with Now Playing, followed by upcoming surahs in playback order. Each row shows the surah number and length.
 - The surah menu offers Play Next and Add to Queue. Play Next inserts immediately after the current surah, and Add to Queue appends to the end. Starting playback from an edition or collection loads that source's queue.
-- Upcoming surahs can be reordered by dragging or with Move Up and Move Down. Their menu offers Remove from Queue. Clear empties the upcoming list while the current surah continues.
+- Upcoming surahs can be reordered by dragging or with Move Up and Move Down. A dragged row is selected and lifts above the list, and its slot is outlined where it will land. Their menu offers Remove from Queue. Clear empties the upcoming list while the current surah continues.
 - Queue edits apply to the current listening session. Playback follows the edited order and stops when the queue ends. Editions play as separate surah tracks.
 
 ### 1. Home
@@ -140,7 +140,7 @@ Purpose: the landing screen. In version 1 it holds the curated featured reciters
 
 Content:
 
-- Sidebar with a Library group (Home, Reciters, Recently Played) and a Collections group (Favorites with a count, a divider, then user collections with counts, and an add-collection control).
+- Sidebar with an unlabeled group (Home, Reciters, History) and a Library group (Favorites with a count of its recitations and reciters, an add-collection control, then a thin line and the user collections with counts).
 - Screen title and a "Featured reciters" section with its count.
 - The featured-reciter seed, in seed order, as the same cards the Reciters screen uses.
 - Loading, network-error and retry states.
@@ -155,6 +155,7 @@ Content:
 - An "All reciters" section header with a shown-of-total count.
 - Filter chips: riwayah, recitation style and Verse Sync. A clear control resets them. The chips wrap onto a second row when the window is narrow.
 - One card or native list item per reciter: initial-letter avatar, English name, Arabic name, available styles and a Verse Sync badge when verified timing exists.
+- A heart that appears on a card's artwork on hover, and Add to Favorites in the card's context menu, keep the reciter in Favorites. The heart stays filled while the reciter is a favorite.
 - Every reciter, always. Featured reciters keep their editorial order at the top of the catalog but have no separate section here; that section is Home.
 - Loading, empty, no-results, network-error and retry states.
 
@@ -169,6 +170,7 @@ Content:
 - Hero with initial-letter avatar, English name and Arabic name.
 - A summary line: edition count, riwayah count and where Verse Sync is verified.
 - One primary action: play the first available surah of the featured or most complete edition.
+- A heart beside it keeps the reciter in Favorites, and removes them again.
 - Editions grouped by riwayah first. Each riwayah header states its style count.
 - Style rows within each riwayah, such as Murattal, Mujawwad or Mu'allim.
 - Per style: available-surah count, a plain-language capability sentence and one capability badge.
@@ -195,16 +197,16 @@ Content:
 - Hero with the style name in English and Arabic, and a metadata line: reciter, riwayah, surah count and ayah count.
 - Actions: play all and shuffle.
 - A timing badge when ayah timing is verified for the edition.
-- A surah list in muṣḥaf order with a play/pause control, the English and Arabic names, and the ayah count. Each row marks the current surah.
+- A surah list in muṣḥaf order with a play/pause control, the English and Arabic names, the ayah count and the length. Each row marks the current surah.
 - Loading, empty, unavailable and retry states.
 
-Duration and bitrate are not shown: the provider does not publish them, and Tilawa does not invent them.
+The provider publishes no durations, so each length is read from the surah's own audio file when its row appears, and stays blank until then or offline. Tilawa never estimates one. Bitrate is not shown.
 
 Phones use a native list instead of a table. The same columns become a row with secondary text.
 
 On macOS, single-click a surah row to select it, double-click to play it, or use its play/pause control directly. History and collection rows use the same interaction. Names that link to other pages remain independently clickable.
 
-### 5. Recently Played
+### 5. History
 
 Purpose: return to what the user was listening to.
 
@@ -221,7 +223,7 @@ History is one flat list, newest first. It has no completion filters.
 
 ### 6. Collections
 
-Purpose: keep chosen recitations together.
+Purpose: keep chosen recitations, and favorite reciters, together.
 
 Favorites is a pinned collection. It is always present and cannot be removed or renamed. User collections behave the same way, but they can be reordered, renamed and edited.
 
@@ -231,7 +233,8 @@ Content:
 - Hero with a collection kicker, the name and a metadata line: item count, reciter count and, for user collections, the last update.
 - Items join a collection from any surah row's actions menu: Add to Favorites, or Add to Collection with a New Collection choice.
 - Actions: play all, shuffle, and, for a user collection, edit (rename or delete).
-- A recitations list with a play/pause control and columns for surah, reciter and, in Favorites, the added date. Favorites lists newest first. A user collection keeps its manual order and reorders by dragging or with Move Up and Move Down.
+- In Favorites, a Reciters section above the recitations lists favorite reciters, newest first. Each opens the reciter's page, and its heart removes the reciter.
+- A recitations list with a play/pause control and columns for surah, reciter, in Favorites the added date, and length. Favorites lists newest first. A user collection keeps its manual order and reorders by dragging or with Move Up and Move Down.
 
 ### General settings
 
@@ -378,6 +381,7 @@ The macOS implementation is the living behavioral reference. This product docume
 ### Collections and favorites
 
 - Favorites is a pinned collection. It always exists. It cannot be renamed, reordered or deleted.
+- Favorites also keeps reciters, by reciter id with a name snapshot, so a reciter that leaves the catalog stays listed by its saved name.
 - A user collection has a name, a manual order and its own items.
 - A collection item is a recording: edition plus surah. It is never a bare surah number.
 - A collection reports its item count and reciter count.
@@ -466,6 +470,7 @@ This list is content configuration. It can be revised without changing the produ
 ### Collections and favorites
 
 - [ ] Provide a pinned Favorites collection that cannot be renamed, reordered or deleted.
+- [ ] Keep reciters in Favorites from the reciter page or a reciter card, and list them in Favorites.
 - [ ] Create, rename, reorder, edit and delete user collections.
 - [ ] Add and remove recordings, and keep the manual order of a user collection.
 - [ ] Show per-collection item and reciter counts.
@@ -557,7 +562,7 @@ On every supported platform, a user must be able to:
 7. Navigate to another library destination without stopping playback.
 8. Switch to another available surah and seek safely.
 9. Control playback through the platform's native media surface.
-10. Stop mid-surah, quit, reopen Recently Played and resume at the stored position.
+10. Stop mid-surah, quit, reopen History and resume at the stored position.
 11. Add a recording to Favorites, create a collection, add the recording to it and play the collection.
 12. Recover from a failed request without restarting the application.
 13. Complete the whole flow with keyboard or assistive technology where the platform supports it.
@@ -655,7 +660,7 @@ Acceptance:
 | Downloading | جارٍ التنزيل |
 | Downloaded | تم التنزيل |
 | Download Failed / Retry | تعذّر التنزيل / إعادة المحاولة |
-| Recently Played | المشغّل مؤخرًا |
+| History | السجل |
 | Downloads | التنزيلات |
 | Collections | المجموعات |
 | Favorites | المفضلة |
@@ -667,7 +672,7 @@ Acceptance:
 | Storage budget | حد التخزين |
 | No results | لا نتائج |
 
-The rows from Recently Played down are proposed. The product owner confirms them in P0 before any application ships them.
+The rows from History down are proposed. The product owner confirms them in P0 before any application ships them.
 
 A successful empty list is an empty state, not a connection failure. A failed request presents the shared safe message and retry eligibility. Untimed recordings play in full with no ayah position. Compact layouts use native stacked destinations and a compact player bar that expands into the primary playback surface; expanded and desktop layouts use the native sidebar and the persistent player bar as defined above. The download and bookmark terms below wait for their later features.
 
@@ -705,7 +710,7 @@ Tasks:
 - [ ] Show a Verse Sync badge on a reciter with verified timing.
 - [ ] Show the shown-of-total count beside the section header.
 - [ ] Use a native grid where space supports it and a native list or adaptive grid where it does not.
-- [ ] Build the sidebar with its Library and Collections groups and live counts.
+- [ ] Build the sidebar with its destinations, its Library group of Favorites and collections, and live counts.
 - [ ] Give each interactive item clear hover, focus, pressed and selected behavior appropriate to the platform.
 - [ ] Provide initial loading, successful content, empty catalog, offline failure and retry states.
 - [ ] Preserve the latest selection when a stale request completes.
@@ -848,6 +853,7 @@ Outcome: a user keeps chosen recitations together.
 Tasks:
 
 - [ ] Provide a pinned Favorites collection that cannot be renamed, reordered or deleted.
+- [ ] Keep reciters in Favorites, by id with a name snapshot, from the reciter page or a reciter card.
 - [ ] Create, rename, reorder, edit and delete user collections.
 - [ ] Add and remove recordings, and keep a user collection's manual order.
 - [ ] Store a collection item as edition plus surah, never as a bare surah number.
@@ -926,7 +932,7 @@ Technical dependency: T8.
 | Recording hierarchy | Detail screen with riwayah sections | Native destination and sections | Native destination and sections | Native page and grouped items | Adwaita navigation page and groups |
 | Edition surah list | SwiftUI `Table` with sortable columns | `LazyColumn` rows with secondary text | `List` rows, `Table` on iPad | WinUI `ListView` or `DataGrid` | Adwaita list rows or a column view |
 | Persistent player | Bottom bar in the window, always visible | Compact bar above the navigation bar, expandable to a full sheet | Compact bar above the tab bar, expandable to a full sheet | Bottom bar in the window frame | Bottom bar in the Adwaita toolbar view |
-| Recently played | Grouped list with a continue-listening card | Grouped `LazyColumn` with a hero card | Sectioned `List` with a hero card | Grouped `ListView` with a hero card | Adwaita preference-style groups |
+| History | Grouped list with a continue-listening card | Grouped `LazyColumn` with a hero card | Sectioned `List` with a hero card | Grouped `ListView` with a hero card | Adwaita preference-style groups |
 | Collections | Sidebar entries plus a collection screen | Sidebar/drawer entries plus a destination | Sidebar or tab entries plus a screen | Menu entries plus a page | Sidebar rows plus a page |
 | Search and filter | `.searchable` field plus filter chips | `SearchBar` plus `FilterChip` | `.searchable` plus a filter menu | `AutoSuggestBox` plus filter controls | `Adw.EntryRow` search plus toggle filters |
 | Material and depth | Translucent blurred chrome over a window wall | Material 3 surfaces and tonal elevation | System materials | Mica and acrylic | Adwaita styles; opaque where no equivalent exists |

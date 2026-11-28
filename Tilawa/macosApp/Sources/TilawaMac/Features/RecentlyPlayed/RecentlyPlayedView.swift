@@ -101,19 +101,13 @@ struct RecentlyPlayedView: View {
             Spacer(minLength: 0)
             ResumeButton(player: nowPlaying.player, isCurrent: isCurrent, resume: resume)
                 .disabled(!isAvailable)
-            Menu {
+            RowMenu(label: "More actions") {
                 RecordingActions(recording: recording, play: isAvailable ? resume : nil)
-            } label: {
-                Image(systemName: "ellipsis").foregroundStyle(Theme.labelSecondary)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .tint(Theme.labelSecondary)
-            .frame(width: 28, height: 28)
-            .accessibilityLabel("More actions")
         }
         .padding(14)
         .card()
+        .tracksRowHover()
     }
 
     /// "Āyah 12 of 286 · 1:58:20 left", or the time when the recording is untimed.

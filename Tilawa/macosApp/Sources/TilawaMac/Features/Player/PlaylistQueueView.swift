@@ -1,13 +1,11 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct PlaylistQueueView: View {
     @EnvironmentObject private var nowPlaying: NowPlaying
     @Environment(\.tilawaAccent) private var accent
     @State private var dragging: QueueEntry.ID?
     @State private var selection: QueueEntry.ID?
-
-    private static let rowType = UTType(mimeType: "application/vnd.tilawa.queue-row", conformingTo: .data)!
+    @StateObject private var lift = RowLift()
 
     var body: some View {
         let entries = Array(nowPlaying.upcoming)
@@ -23,7 +21,8 @@ struct PlaylistQueueView: View {
                     .padding(.bottom, 8)
 
                 if let current = nowPlaying.current {
-                    track(current, isCurrent: true, play: nowPlaying.togglePlay) { EmptyView() }
+                    // The menu's width keeps the lengths in one column.
+                    track(current, isCurrent: true, play: nowPlaying.togglePlay) { Color.clear.frame(width: 26, height: 1) }
                         .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
                         .padding(.bottom, 8)
                 } else {
@@ -59,12 +58,21 @@ struct PlaylistQueueView: View {
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                     queueRow(entry, previous: index > 0 ? entries[index - 1].id : nil,
                              next: index + 1 < entries.count ? entries[index + 1].id : nil)
+                        .reorderable(entry.id, order: { nowPlaying.upcoming.map(\.id) }, spacing: 4, dragging: $dragging, lift: lift,
+                                     move: nowPlaying.moveQueued)
+                }
+            }
+            .liftedRow(lift) {
+                if let entry = entries.first(where: { $0.id == dragging }) {
+                    track(entry.item, isCurrent: false, play: {}) { menuGlyph }
+                        .modifier(QueueRowFill(isSelected: selection == entry.id))
                 }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onChange(of: dragging) { if let id = $0 { selection = id } }
     }
 
     private func sectionTitle(_ title: String) -> some View {
@@ -78,32 +86,13 @@ struct PlaylistQueueView: View {
     private func queueRow(_ entry: QueueEntry, previous: QueueEntry.ID?, next: QueueEntry.ID?) -> some View {
         let play = { nowPlaying.playQueued(entry.id) }
         return track(entry.item, isCurrent: false, play: play) {
-            Menu {
+            RowMenu(label: "Queue actions for \(entry.item.chapter.name)", width: 26) {
                 actions(for: entry, previous: previous, next: next, play: play)
-            } label: {
-                Image(systemName: "ellipsis").foregroundStyle(Theme.labelSecondary)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .tint(Theme.labelSecondary)
-            .frame(width: 26, height: 28)
-            .accessibilityLabel("Queue actions for \(entry.item.chapter.name)")
         }
-        .background(selection == entry.id ? accent.opacity(0.20) : Theme.segment.opacity(0.5),
-                    in: RoundedRectangle(cornerRadius: 9))
+        .modifier(QueueRowFill(isSelected: selection == entry.id))
         .surahRowClicks(select: { selection = entry.id }, play: play)
         .contextMenu { actions(for: entry, previous: previous, next: next, play: play) }
-        .onDrag {
-            dragging = entry.id
-            selection = entry.id
-            let provider = NSItemProvider()
-            provider.registerDataRepresentation(forTypeIdentifier: Self.rowType.identifier, visibility: .ownProcess) { complete in
-                complete(Data([0]), nil)
-                return nil
-            }
-            return provider
-        }
-        .onDrop(of: [Self.rowType], delegate: RowReorder(target: entry.id, dragging: $dragging, move: nowPlaying.moveQueued))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(entry.item.chapter.name), \(entry.item.chapter.arabicName)")
         .accessibilityAddTraits(selection == entry.id ? .isSelected : [])
@@ -120,6 +109,8 @@ struct PlaylistQueueView: View {
                 // handle takes the play button's width so the names line up.
                 DragHandle().frame(width: 26)
             }
+            NumberTile(number: item.chapter.id)
+                .padding(.trailing, 4)
             VStack(alignment: .leading, spacing: 3) {
                 SurahTitle(title: item.chapter.name, arabic: item.chapter.arabicName, recording: item.recording)
                     .font(.system(size: 13, weight: .semibold))
@@ -128,10 +119,17 @@ struct PlaylistQueueView: View {
                     .foregroundStyle(Theme.labelSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            SurahLength(url: item.audioURL)
             trailing()
         }
         .padding(.horizontal, 7)
         .frame(minHeight: 49)
+    }
+
+    private var menuGlyph: some View {
+        Image(systemName: "ellipsis")
+            .foregroundStyle(Theme.labelSecondary)
+            .frame(width: 26, height: 28)
     }
 
     private func actions(for entry: QueueEntry, previous: QueueEntry.ID?, next: QueueEntry.ID?,
@@ -149,5 +147,22 @@ struct PlaylistQueueView: View {
             .disabled(next == nil)
             Button("Remove from Queue") { nowPlaying.removeQueued(entry.id) }
         }
+    }
+}
+
+/// An upcoming row's fill: the selection's accent, a quiet gray under the
+/// pointer, and nothing at rest.
+private struct QueueRowFill: ViewModifier {
+    let isSelected: Bool
+
+    @Environment(\.tilawaAccent) private var accent
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(isSelected ? accent.opacity(0.20) : isHovered ? Theme.segment.opacity(0.5) : .clear,
+                        in: RoundedRectangle(cornerRadius: 9))
+            .environment(\.isRowHovered, isHovered)
+            .onHover { isHovered = $0 }
     }
 }

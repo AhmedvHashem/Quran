@@ -57,7 +57,8 @@ struct EditionView: View {
                         Color.clear.frame(width: 14, height: 1)
                         Color.clear.frame(width: 26, height: 1)
                         Text("Surah").frame(width: 250, alignment: .leading)
-                        Text("Length").frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Āyāt").frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Time").frame(width: 52, alignment: .trailing)
                         Color.clear.frame(width: 28, height: 1)
                     }
                     if shown.isEmpty {
@@ -75,6 +76,7 @@ struct EditionView: View {
                                 chapter: item.chapter,
                                 isCurrent: nowPlaying.isCurrent(item.recording),
                                 isSelected: selectedChapter == item.chapter.id,
+                                audio: item.audioURL,
                                 select: { selectedChapter = item.chapter.id },
                                 play: play
                             ) {
@@ -85,6 +87,7 @@ struct EditionView: View {
                                 RecordingActions(recording: item.recording, play: play)
                             }
                             .id(item.chapter.id)
+                            .rowDivider(index != shown.last)
                         }
                     }
                 }

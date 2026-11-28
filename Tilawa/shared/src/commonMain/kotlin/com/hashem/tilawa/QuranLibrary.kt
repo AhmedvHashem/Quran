@@ -170,6 +170,12 @@ class QuranLibrary {
 
     fun moveCollectionItem(id: String, fromIndex: Int, toIndex: Int, nowMs: Long): Boolean =
         libraryStore.moveCollectionItem(id, fromIndex, toIndex, nowMs)
+
+    /** Keeps a reciter in Favorites; read them from the Favorites collection's `reciters`. */
+    fun addFavoriteReciter(reciterId: Int, name: String, nowMs: Long): Boolean =
+        libraryStore.addFavoriteReciter(reciterId, name, nowMs)
+
+    fun removeFavoriteReciter(reciterId: Int, nowMs: Long): Boolean = libraryStore.removeFavoriteReciter(reciterId, nowMs)
 }
 
 internal suspend fun <T> quranRequest(block: suspend () -> T): Pair<T?, QuranFailure?> = try {

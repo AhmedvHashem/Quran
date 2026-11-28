@@ -15,6 +15,7 @@ import com.hashem.tilawa.domain.model.Reciter
 import com.hashem.tilawa.domain.model.RecordingIdentity
 import com.hashem.tilawa.domain.model.Riwayah
 import com.hashem.tilawa.domain.model.TextAvailability
+import com.hashem.tilawa.domain.model.surahAudioUrl
 import com.hashem.tilawa.domain.model.Verse
 import com.hashem.tilawa.domain.model.VerseTiming
 import com.hashem.tilawa.domain.model.validatedTiming
@@ -170,7 +171,7 @@ internal class QuranRepositoryImpl(
         return PlaybackTrack(
             identity = identity,
             chapterId = chapterId,
-            trackUrl = "$baseUrl${chapterId.toString().padStart(3, '0')}.mp3",
+            trackUrl = surahAudioUrl(baseUrl, chapterId),
             verses = verses,
             timing = timing,
             textAvailability = if (compatible) TextAvailability.VERIFIED else TextAvailability.AUDIO_ONLY,

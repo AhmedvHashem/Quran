@@ -14,6 +14,7 @@ namespace TilawaWindows
         public MainWindow()
         {
             InitializeComponent();
+            AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
             Closed += OnClosed;
             _ = LoadRecitersAsync();
         }

@@ -12,5 +12,6 @@
     <Using Include="Tilawa.Core.Domain.Model" />
     <PackageReference Include="GirCore.Adw-1" Version="0.8.1" />
     <PackageReference Include="Tilawa.Core" Version="0.1.0" />
+    <Content Include="icons\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -36,12 +36,22 @@ data class CollectionItem(
     val addedAtMs: Long,
 )
 
+/** A reciter kept in Favorites. The name is a snapshot, like a recording's. */
+@Serializable
+data class FavoriteReciter(
+    val reciterId: Int,
+    val name: String,
+    val addedAtMs: Long,
+)
+
 @Serializable
 data class RecitationCollection(
     val id: String,
     val name: String,
     val items: List<CollectionItem>,
     val updatedAtMs: Long,
+    /** Only Favorites keeps reciters. */
+    val reciters: List<FavoriteReciter> = emptyList(),
 ) {
     /** Favorites is pinned: it cannot be renamed, moved or deleted. */
     val isFavorites: Boolean get() = id == FAVORITES_ID

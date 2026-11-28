@@ -92,4 +92,19 @@ class LibraryStoreTest {
         assertTrue(store.deleteCollection(b.id))
         assertEquals(listOf("Favorites", "Renamed"), store().collections().map { it.name })
     }
+
+    @Test
+    fun `favorite reciters are kept once and survive a new instance`() {
+        // A document written before favorite reciters existed still loads.
+        collections.write("""[{"id":"favorites","name":"Favorites","items":[],"updatedAtMs":0}]""")
+        store().apply {
+            assertTrue(addFavoriteReciter(123, "Mishary Rashid Alafasy", 1))
+            addFavoriteReciter(54, "Abdur-Rahman As-Sudais", 2)
+            addFavoriteReciter(123, "Mishary Rashid Alafasy", 3)
+        }
+        assertEquals(listOf(123, 54), store().collections().first().reciters.map { it.reciterId })
+
+        store().removeFavoriteReciter(123, 4)
+        assertEquals(listOf(54), store().collections().first().reciters.map { it.reciterId })
+    }
 }

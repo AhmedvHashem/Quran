@@ -19,6 +19,11 @@ struct QueueItem: Equatable {
     }
 }
 
+extension QueueItem {
+    /// The surah's audio file, which its length is read from.
+    var audioURL: URL? { URL(string: edition.audioUrl(chapterId: chapter.id)) }
+}
+
 /// The reciter catalog, loaded once for the whole app: every screen and the
 /// library destinations resolve reciters, editions and surahs through it.
 @MainActor

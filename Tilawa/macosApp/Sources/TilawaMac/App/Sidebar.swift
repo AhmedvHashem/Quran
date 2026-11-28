@@ -15,14 +15,16 @@ struct Sidebar: View {
             Section {
                 row("Home", "house", .home)
                 row("Reciters", "person", .reciters)
-                row("Recently Played", "clock", .recentlyPlayed)
+                row("History", "clock", .recentlyPlayed)
             }
 
             Section {
-                row("Favorites", "star.fill", favorites, count: userLibrary.favorites.items.count)
+                row("Favorites", "star.fill", favorites,
+                    count: userLibrary.favorites.items.count + userLibrary.favorites.reciters.count)
 
+                // Favorites is pinned above the collections you order yourself.
+                // The divider has no tag, so it can't be selected.
                 if !userLibrary.userCollections.isEmpty {
-                    // Favorites is pinned above the collections you order yourself.
                     Divider()
                 }
 
@@ -39,17 +41,18 @@ struct Sidebar: View {
                 }
             } header: {
                 HStack {
-                    Text("Collections")
+                    Text("Library")
                     Spacer()
                     Button { router.newCollection() } label: {
                         Image(systemName: "plus").font(.system(size: 11, weight: .medium))
                     }
                     .buttonStyle(.borderless)
                     // Lines the + up with the count column below it.
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 15)
                     .help("New collection")
                     .accessibilityLabel("New collection")
                 }
+                .padding(.bottom, 4)
             }
         }
         .listStyle(.sidebar)
@@ -67,8 +70,8 @@ struct Sidebar: View {
         }
     }
 
-    /// The tag must be the row's last modifier: a badge or menu applied after
-    /// it hides the tag from the list's selection, and the row stops opening.
+    /// The tag must be the row's last modifier: a menu applied after it hides
+    /// the tag from the list's selection, and the row stops opening.
     private func row(
         _ title: String,
         _ symbol: String,
@@ -77,8 +80,7 @@ struct Sidebar: View {
         @ViewBuilder menu: () -> some View = { EmptyView() }
     ) -> some View {
         let isSelected = router.destination == destination
-        return SidebarLabel(title: title, symbol: symbol, isSelected: isSelected)
-            .badge(count ?? 0)
+        return SidebarLabel(title: title, symbol: symbol, isSelected: isSelected, count: count)
             .contextMenu { menu() }
             .listRowBackground(SidebarSelection(isSelected: isSelected))
             .tag(destination)
@@ -105,21 +107,32 @@ private struct SidebarSelection: View {
 }
 
 /// A sidebar row whose icon takes the chosen accent, and whose text and icon
-/// turn white on the accent fill of a selected row in the active window.
+/// turn white on the accent fill of a selected row in the active window. The
+/// count is drawn here rather than as a list badge, which can't tell the row
+/// sits on the app's own accent fill and would stay gray on it.
 private struct SidebarLabel: View {
     let title: String
     let symbol: String
     let isSelected: Bool
+    var count: Int?
 
     @Environment(\.tilawaAccent) private var accent
     @Environment(\.controlActiveState) private var activeState
 
     var body: some View {
         let onFill = isSelected && activeState != .inactive
-        Label {
-            Text(title).foregroundStyle(onFill ? Color.white : .primary)
-        } icon: {
-            Image(systemName: symbol).foregroundStyle(onFill ? .white : isSelected ? .primary : accent)
+        HStack(spacing: 4) {
+            Label {
+                Text(title).foregroundStyle(onFill ? Color.white : .primary)
+            } icon: {
+                Image(systemName: symbol).foregroundStyle(onFill ? .white : isSelected ? .primary : accent)
+            }
+            Spacer(minLength: 0)
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(onFill ? Color.white.opacity(0.85) : .secondary)
+            }
         }
         .background(RowHighlightOff())
     }

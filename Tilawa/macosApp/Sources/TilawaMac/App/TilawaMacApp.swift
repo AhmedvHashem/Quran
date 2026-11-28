@@ -114,7 +114,13 @@ private struct RootView: View {
             .tint(accent.color)
             .environment(\.tilawaAccent, accent.color)
             .preferredColorScheme(appearance.colorScheme)
-            .task { await catalog.load() }
+            .task {
+                if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil,
+                   let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns") {
+                    NSApp.applicationIconImage = NSImage(contentsOf: url)
+                }
+                await catalog.load()
+            }
             .alert(namingTitle, isPresented: isNaming) {
                 TextField("Name", text: namingText)
                 Button(router.naming?.collectionId == nil ? "Create" : "Rename", action: commitNaming)

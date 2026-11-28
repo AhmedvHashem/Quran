@@ -20,6 +20,9 @@ let package = Package(
             name: "TilawaMac",
             dependencies: ["Shared"],
             path: "Sources/TilawaMac",
+            resources: [
+                .process("Resources")
+            ],
             // SwiftPM's default build system stamps the deployment target as the
             // SDK version, so AppKit runs the app in pre-macOS 26 compatibility
             // mode: no Liquid Glass sidebar, toolbar or controls. Declare the

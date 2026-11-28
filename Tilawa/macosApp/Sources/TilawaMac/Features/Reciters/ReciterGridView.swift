@@ -196,9 +196,11 @@ private struct ReciterCard: View {
     let hasSync: Bool
     let open: () -> Void
 
+    @EnvironmentObject private var userLibrary: UserLibrary
     @State private var isHovered = false
 
     var body: some View {
+        let isFavorite = userLibrary.isFavorite(reciter)
         Button(action: open) {
             VStack(alignment: .leading, spacing: 0) {
                 LetterTile(letter: reciter.initial, seed: reciter.id)
@@ -230,10 +232,26 @@ private struct ReciterCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Beside the card's button, not inside it: the heart shows on hover
+        // and stays while the reciter is a favorite.
+        .overlay(alignment: .topTrailing) {
+            if isHovered || isFavorite {
+                ReciterFavoriteButton(reciter: reciter, controlSize: .small)
+                    .padding(8)
+                    .offset(y: isHovered ? -2 : 0)
+                    .transition(.opacity)
+            }
+        }
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button(isFavorite ? "Remove from Favorites" : "Add to Favorites") { userLibrary.toggleFavorite(reciter) }
+        }
         .accessibilityLabel("\(reciter.name), \(reciter.arabicName)")
         .accessibilityValue(hasSync ? "\(styles), Verse Sync" : styles)
         .accessibilityHint("Show riwayat and recording styles")
+        .accessibilityAction(named: isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+            userLibrary.toggleFavorite(reciter)
+        }
     }
 }
 

@@ -52,13 +52,16 @@ struct ReciterDetailView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.labelSecondary)
 
-                if let edition = catalog.preferredEdition(of: reciter),
-                   let first = catalog.queue(edition).first {
-                    PillButton(title: "Play \(first.chapter.name)", symbol: "play.fill", isPrimary: true) {
-                        nowPlaying.play(catalog.queue(edition))
+                HStack(spacing: 10) {
+                    if let edition = catalog.preferredEdition(of: reciter),
+                       let first = catalog.queue(edition).first {
+                        PillButton(title: "Play \(first.chapter.name)", symbol: "play.fill", isPrimary: true) {
+                            nowPlaying.play(catalog.queue(edition))
+                        }
                     }
-                    .padding(.top, 2)
+                    ReciterFavoriteButton(reciter: reciter)
                 }
+                .padding(.top, 2)
             }
             .padding(.top, 6)
         }

@@ -69,6 +69,26 @@ final class UserLibrary: ObservableObject {
         isFavorite(recording) ? remove(recording, from: favorites.id) : add(recording, to: favorites.id)
     }
 
+    /// Favorites also keeps reciters.
+    func isFavorite(_ reciter: Reciter) -> Bool {
+        favorites.reciters.contains { $0.reciterId == reciter.id }
+    }
+
+    func toggleFavorite(_ reciter: Reciter) {
+        if isFavorite(reciter) {
+            library.removeFavoriteReciter(reciterId: reciter.id, nowMs: nowMs)
+        } else {
+            library.addFavoriteReciter(reciterId: reciter.id, name: reciter.name, nowMs: nowMs)
+        }
+        collections = library.collections()
+    }
+
+    /// Removes by id, which works for a reciter that has left the catalog too.
+    func removeFavoriteReciter(_ reciterId: Int32) {
+        library.removeFavoriteReciter(reciterId: reciterId, nowMs: nowMs)
+        collections = library.collections()
+    }
+
     @discardableResult
     func create(named name: String) -> RecitationCollection? {
         defer { collections = library.collections() }

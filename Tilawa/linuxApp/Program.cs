@@ -7,6 +7,8 @@ application.OnShutdown += (_, _) => closed.Cancel();
 application.OnActivate += async (sender, _) =>
 {
     var window = Adw.ApplicationWindow.New((Adw.Application)sender);
+    Gtk.IconTheme.GetForDisplay(window.GetDisplay()).AddSearchPath(Path.Combine(AppContext.BaseDirectory, "icons"));
+    window.IconName = "com.hashem.Tilawa";
     var status = Gtk.Label.New("Loading reciters…");
     window.Title = "Tilawa";
     window.SetDefaultSize(960, 640);

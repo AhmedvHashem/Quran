@@ -28,7 +28,14 @@ data class RecitationEdition(
     val availableSurahs: Set<Int>,
     val hasTiming: Boolean,
     val isFeatured: Boolean = false,
-)
+) {
+    /** The continuous audio file of one surah in this edition. */
+    fun audioUrl(chapterId: Int): String = surahAudioUrl(serverBaseUrl, chapterId)
+}
+
+/** One surah's file in an edition's server folder, for example `…/002.mp3`. */
+internal fun surahAudioUrl(baseUrl: String, chapterId: Int): String =
+    "$baseUrl${chapterId.toString().padStart(3, '0')}.mp3"
 
 /** Stable identity for one provider recording revision. */
 @Serializable

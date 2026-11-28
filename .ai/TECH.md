@@ -71,7 +71,7 @@ The KMP shared module owns logic that must behave identically everywhere:
 - Pure position-to-ayah resolution using the native player's reported position.
 - Download metadata, desired state, byte accounting and reconciliation policy, but not OS background execution.
 - Listening sessions: identity, last media position, derived ayah, heard fraction and newest-first ordering.
-- Collections: identity, the pinned Favorites rule, manual order and item validity.
+- Collections: identity, the pinned Favorites rule, manual order, item validity and the reciters Favorites keeps.
 - Ayah bookmarks: edition, surah, ayah and media position identity.
 - Storage-budget accounting: used bytes, per-reciter totals and the limit-reached decision.
 - Search normalization and matching predicates over reciters, editions, surahs and library items. Display text stays verbatim.
@@ -437,6 +437,7 @@ These extend the same exported contract. They depend on T2 for storage, so defin
 - [ ] Add search normalization and matching predicates for English names, Arabic names, transliterations and surah numbers. Keep display text verbatim. macOS uses Foundation's diacritic- and case-insensitive folding until this lands.
 - [ ] Add deterministic play-all and shuffle order for an edition and for a collection. macOS uses the system shuffle until P0 defines the rule.
 - [x] Keep the exported API narrow: expose product operations, not the store.
+- [x] Keep reciters in Favorites: `reciters` on the Favorites collection (id, name snapshot, added time) in `collections.json`, through `addFavoriteReciter` and `removeFavoriteReciter`. A document written before the field existed still loads (2026-11-24).
 - Deferred with their product features: ayah-bookmark identity, download byte size and bitrate, and the storage-budget rule.
 
 Smallest required tests for the additions:
@@ -445,9 +446,10 @@ Smallest required tests for the additions:
 - [x] Favorites cannot be renamed, reordered or deleted.
 - [x] A collection keeps its manual order across a new store instance.
 - [x] An item whose recording left the catalog stays present (verified in the macOS app, shown as unavailable).
+- [x] A favorite reciter is kept once, survives a new store instance and can be removed.
 - [ ] An Arabic query and an English query find the same reciter (waits for shared normalization).
 
-`LibraryStoreTest` covers the store; `:shared:macosArm64Test` ran 41 tests with no failures on 2026-11-23.
+`LibraryStoreTest` covers the store; `:shared:macosArm64Test` ran 42 tests with no failures on 2026-11-24.
 
 #### T1 contract and validation evidence
 
@@ -554,7 +556,7 @@ Tasks:
 - [x] Continue only through surahs available in the selected edition.
 - [x] Use the shared timing resolver and leave intro/gap regions without an ayah position.
 - [x] Add Now Playing metadata, remote commands and media-key behavior; macOS has no `AVAudioSession`, so observed `AVPlayer` pause/wait/failure state is its native interruption path.
-- [x] Rebuild the information architecture as the redesign defines it: sidebar, Home (featured reciters), Reciters (the whole catalog), Reciter detail, Recording edition, Recently Played and Collections. Each sidebar destination keeps its own navigation stack.
+- [x] Rebuild the information architecture as the redesign defines it: sidebar, Home (featured reciters), Reciters (the whole catalog), Reciter detail, Recording edition, History and Collections. Each sidebar destination keeps its own navigation stack.
 - [x] Move the player into a persistent 88pt bottom bar present on every screen, including the no-recording state.
 - [x] Add search and the reciter filter chips (riwayah, style, Verse Sync, clear).
 - [x] Build the library destinations on the T2 store: history and resume, Favorites and user collections.
@@ -568,10 +570,11 @@ Acceptance: the `PRODUCT.md` v1 acceptance journey passes on macOS ARM64 and bec
 
 Status: active. The redesign landed on 2026-11-23.
 
-- `Catalog` loads reciters, every edition and the chapters once for the app. `ListeningHistory` and `UserLibrary` republish the shared history and collections, kept apart because playback saves progress every 10 seconds and only Recently Played shows it. `NowPlaying` owns the queue: play all, shuffle, continue to the next surah and resume at a stored position.
-- The macOS queue panel uses the same row drop delegate as collections. Each upcoming queue entry has a stable ID so repeated recordings can be moved or removed independently. Other platforms will adopt the corresponding controls in T4–T7.
+- `Catalog` loads reciters, every edition and the chapters once for the app. `ListeningHistory` and `UserLibrary` republish the shared history and collections, kept apart because playback saves progress every 10 seconds and only History shows it. `NowPlaying` owns the queue: play all, shuffle, continue to the next surah and resume at a stored position.
+- Queue and collection rows reorder with an in-window lift (`RowLift`), not a system drag: macOS draws a system drag image translucent. The lifted row follows the pointer opaque, its slot shows where it will land, and the gesture reads the current order, since it keeps the closures it started with. Each upcoming queue entry has a stable ID so repeated recordings can be moved or removed independently. Other platforms will adopt the corresponding controls in T4–T7.
 - Sessions save on pause, on the end of a surah, before switching surahs, every 10 seconds of playback and on quit.
 - Space toggles playback through a key monitor that ignores text input; a bare-Space menu shortcut would swallow spaces in search and name fields.
+- Surah lengths are read from each audio file by `AVURLAsset` when a row appears (`SurahLength`), because MP3Quran lists none. It is the same length the player bar shows, and matched a full frame count on constant-bitrate files; a file that changes bitrate part-way can read a few seconds off (two uploads of Alafasy's Al-Baqarah read 17s apart). The shared core builds the file URL (`RecitationEdition.audioUrl`). Lengths are cached for the session only. Other platforms read them through their own player engine.
 - Rendering stays local to what changed. `PlaybackClock` holds the 5 Hz position and the current ayah, and only the seek row and ayah tag observe it. The App and `RootView` own the models without observing them, and the menu commands observe their own. Before this, every position tick rebuilt the whole window (2026-11-24: 60–100% CPU while playing, now ~7%, most of it audio decoding). Environment values must be stable: a `Color` built per render never equals the last one and re-renders every view that reads it.
 - General settings persists appearance and accent in macOS preferences. The chosen accent updates app controls and the floating player bar in place. macOS paints sidebar selection only in the system accent, so the sidebar switches that drawing off per row (`RowHighlightOff`) and draws its own accent fill, gray in an inactive window. A row's selection `.tag` must be its last modifier; a badge or menu after it breaks selection.
 - Reciter and recording links and single-click selection with double-click playback are implemented on macOS. Other platform shells will adopt the corresponding navigation, playback controls and settings in T4–T7.
